@@ -1,0 +1,66 @@
+{
+  "_note": "Paragon Hub one-screen order Flow (Navigate type — no backend endpoint needed). Create via WhatsApp Manager → Flows (rebuild visually using these fields) OR via API: POST /{WABA_ID}/flows with this file's screens. Then publish, copy the Flow ID into .env as FLOW_ID. Customers open it by typing 'form'. Answers arrive as response_json: { product_id, qty, name, phone, details }.",
+  "version": "5.1",
+  "screens": [
+    {
+      "id": "START",
+      "title": "Quick order",
+      "terminal": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "order",
+            "children": [
+              { "type": "TextHeading", "text": "Paragon Hub — quick order" },
+              {
+                "type": "TextBody",
+                "text": "Pick a service, add your details, submit. We confirm + send payment steps right here in chat."
+              },
+              {
+                "type": "Dropdown",
+                "label": "Service",
+                "required": true,
+                "name": "product_id",
+                "data-source": [
+                  { "id": "T001", "title": "TikTok growth" },
+                  { "id": "I007", "title": "Instagram growth" },
+                  { "id": "W001", "title": "Website design (quote)" },
+                  { "id": "OTHER", "title": "Something else (we'll chat)" }
+                ]
+              },
+              {
+                "type": "Dropdown",
+                "label": "Quantity",
+                "required": false,
+                "name": "qty",
+                "data-source": [
+                  { "id": "1", "title": "1" },
+                  { "id": "2", "title": "2" },
+                  { "id": "3", "title": "3" },
+                  { "id": "5", "title": "5" }
+                ]
+              },
+              { "type": "TextInput", "label": "Full name", "required": true, "name": "name" },
+              { "type": "TextInput", "label": "Phone number", "required": true, "name": "phone", "input-type": "phone" },
+              {
+                "type": "TextArea",
+                "label": "Username / link / brief",
+                "required": true,
+                "name": "details",
+                "helper-text": "e.g. TikTok @handle, IG link, or describe the design you want"
+              },
+              {
+                "type": "Footer",
+                "label": "Submit order",
+                "on-click-action": { "name": "complete", "payload": {} }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

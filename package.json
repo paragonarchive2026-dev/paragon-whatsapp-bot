@@ -1,0 +1,16 @@
+{
+  "name": "whatsapp-ecommerce-support-bot",
+  "version": "1.0.0",
+  "description": "E-commerce support bot on WhatsApp Cloud API with buttons, lists, order tracking and human handover",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}

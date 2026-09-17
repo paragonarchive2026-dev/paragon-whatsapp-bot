@@ -1,0 +1,15 @@
+{
+  "_note": "PROOF GALLERIES — paste free image links (ImgBB/Imgur/Cloudinary) into images arrays. 2-4 images per pack, JPG/PNG ideally under 1MB each for fast delivery. Customers reach this via FAQ 'See proof & past work' or keywords: proof / sample / example / portfolio / past work.",
+  "categories": [
+    { "id": "logos", "title": "Logo designs", "blurb": "Recent logos we made" },
+    { "id": "flyers", "title": "Flyers & banners", "blurb": "Designs that sell" },
+    { "id": "websites", "title": "Websites built", "blurb": "Screenshots of live sites" },
+    { "id": "boost", "title": "Boost before/after", "blurb": "Real results proof" }
+  ],
+  "packs": {
+    "logos": { "caption": "Logos we designed for clients 🔥", "images": [] },
+    "flyers": { "caption": "Flyers & banners that grab attention 🎨", "images": [] },
+    "websites": { "caption": "Websites we built 🌐", "images": [] },
+    "boost": { "caption": "Real boost results — before vs after 📈", "images": [] }
+  }
+}

@@ -1,0 +1,25 @@
+# Render Blueprint — deploys the bot on the FREE tier (₦0, no card).
+# Render Dashboard → New → Blueprint → connect this repo. Then fill env vars.
+services:
+  - type: web
+    name: whatsapp-bot
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: PHONE_NUMBER_ID
+        sync: false
+      - key: VERIFY_TOKEN
+        generateValue: true
+      - key: ADMIN_PHONE
+        sync: false
+      - key: SHOP_NAME
+        sync: false
+      - key: SHOP_ACCOUNT_DETAILS
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false

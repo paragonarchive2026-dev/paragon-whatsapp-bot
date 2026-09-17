@@ -1,0 +1,20 @@
+[
+  {
+    "id": "ORD-1001",
+    "status": "Shipped 🚚",
+    "detail": "2x Ankara Gown (M) — with GIG Logistics",
+    "eta": "Thu 18 Sep"
+  },
+  {
+    "id": "ORD-1002",
+    "status": "Processing ⏳",
+    "detail": "1x Leather Slides (42) — being packed",
+    "eta": "Fri 19 Sep"
+  },
+  {
+    "id": "ORD-1003",
+    "status": "Delivered ✅",
+    "detail": "3x Hair Bonnet set — signed by recipient",
+    "eta": "Delivered 14 Sep"
+  }
+]
