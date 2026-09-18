@@ -35,7 +35,7 @@ export async function sendNativeCatalog(to) {
   } catch (e) {
     console.error("catalog_message failed (catalog not linked yet?):", e.response?.data || e.message);
     await sendText(to, `Our tap-to-cart store is launching soon! Meanwhile type *shop* to browse and order in chat — same prices, same speed 😊\n\n${TAGLINE}`);
-    if (ADMIN()) await sendText(ADMIN(), "⚠️ A customer tapped Native Catalog but catalog_message failed — Commerce catalog is not linked to the WABA yet. See CATALOG.md.");
+    if (ADMIN()) await sendText(ADMIN(), "⚠️ A customer tapped Native Catalog but catalog_message failed — Commerce catalog is not linked to the WABA yet. Link it in Commerce Manager (ask me how).");
   }
 }
 

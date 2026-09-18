@@ -9,7 +9,7 @@ import { startCartCheckout, handleCartStep, sendNativeCatalog } from "./cart.js"
 import { handleProofAction } from "./proof.js";
 import { handleFlowDone, handleIncomingMedia } from "./growth.js";
 import { getOrCreateCode, parseCode, shareLink, recordJoin, recordOrderCredit, peekReward, consumeReward, rewardsSummary, recordAcquisition } from "./rewards.js";
-import { confirmTicketPayment, handleApprove, handleDeclineStart, handleDeclineReason, sendApprovalCard, showPendingDashboard, showTicketAdmin, showAdminMenu, showAdminMore, pickTicketFor, showPaidConfirm, askQuoteAmount, askPaidAmount, showPausedChats, adminHelp, sendQuoteNow, sendBalanceNow, sendRemindNow, resumeChat, reportPaidResult, depositDue, notifyHandover, enterReplyMode, showPausedChat, showDeliverConfirm, deliverTicket } from "./admin.js";
+import { confirmTicketPayment, handleApprove, handleDeclineStart, handleDeclineReason, sendApprovalCard, showPendingDashboard, showTicketAdmin, showAdminMenu, showAdminMore, pickTicketFor, showPaidConfirm, askQuoteAmount, askPaidAmount, showPausedChats, adminHelp, sendQuoteNow, sendBalanceNow, sendRemindNow, resumeChat, reportPaidResult, depositDue, notifyHandover, enterReplyMode, showPausedChat, showDeliverConfirm, deliverTicket, sendDeclineNow } from "./admin.js";
 
 const SHOP = () => process.env.SHOP_NAME || "our shop";
 const ADMIN = () => process.env.ADMIN_PHONE || "";
@@ -65,6 +65,7 @@ const FAQ_TOPICS = [
   { id: "proof", title: "See proof & past work" },
   { id: "faq_product", title: "Our services" },
   { id: "faq_returns", title: "Refunds & revisions" },
+  { id: "feedback", title: "Give feedback 💡" },
   { id: "appoint", title: "How appointments work" },
   { id: "refer", title: "Refer & earn 🎁" },
 ];
@@ -531,10 +532,12 @@ async function askOrderDetails(to, session, stepLabel) {
 }
 
 // ================= COMPLAINT FORM =================
-async function startComplaint(to, session) {
+async function startComplaint(to, session, kind = "complaint") {
   session.step = "awaiting_name";
-  session.form = { kind: "complaint" };
-  await sendText(to, "Sorry about that — let's fix it 🙏\n\nStep 1/4: What is your *full name*?\n(Type *cancel* anytime to stop)");
+  session.form = { kind };
+  const what = kind === "feedback" ? "💡 Filing a *feedback ticket*" : "📝 Filing a *complaint ticket*";
+  const sorry = kind === "feedback" ? "We love feedback — let's record yours 🙏" : "Sorry about that — let's fix it 🙏";
+  await sendText(to, `${sorry}\n\n${what} (Step 1/4): What is your *full name*?\n(Type *cancel* anytime to stop)`);
 }
 
 /**
@@ -650,7 +653,7 @@ export async function handleIncoming(from, msg, messageId) {
   }
 
   // ---- Cancel / menu escape during any form ----
-  if (session.step !== "idle" && (lower === "cancel" || lower === "menu")) {
+  if (session.step !== "idle" && (lower === "cancel" || lower === "menu" || (adminOK && /^(admin|boss|console)$/.test(lower)))) {
     resetSession(from);
     if (adminOK) await showAdminMenu(from, session);
     else await showMenu(from, session);
@@ -701,6 +704,12 @@ export async function handleIncoming(from, msg, messageId) {
       return;
     }
     await handleDeclineReason(from, session, text);
+    return;
+  }
+  // ---- Long decline-reason: boss must tap Send or Cancel (no accidental novels) ----
+  if (session.step === "awaiting_decline_confirm" && !actionId) {
+    if (!adminOK) { resetSession(from); return; }
+    await sendText(from, "👆 Tap *Send it* or *Cancel* above to decide.");
     return;
   }
 
@@ -929,7 +938,7 @@ export async function handleIncoming(from, msg, messageId) {
   if (session.step === "awaiting_order") {
     session.form.orderId = lower === "skip" ? "N/A" : text.toUpperCase();
     session.step = "awaiting_issue";
-    await sendText(from, "Step 3/4: Briefly describe the *issue* (wrong service, delay, numbers dropped, refund…)");
+    await sendText(from, session.form?.kind === "feedback" ? "Step 3/4: Share your *feedback* 💡 (what did you love? what should we improve?)" : "Step 3/4: Briefly describe the *issue* (wrong service, delay, numbers dropped, refund…)");
     return;
   }
   if (session.step === "awaiting_issue") {
@@ -940,14 +949,16 @@ export async function handleIncoming(from, msg, messageId) {
   }
   if (session.step === "awaiting_phone") {
     session.form.callback = text;
-    const ticket = saveTicket({ customer: from, status: "open", ...session.form });
+    const isFdb = session.form.kind === "feedback";
+    const cref = `${isFdb ? "FDB" : "CMP"}-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+    const ticket = saveTicket({ ref: cref, customer: from, status: "open", ...session.form });
     resetSession(from);
     await sendText(
       from,
-      `✅ *Request received!*\n\nName: ${ticket.name}\nOrder: ${ticket.orderId}\nIssue: ${ticket.issue}\nCallback: ${ticket.callback}\n\nOur team will contact you within 24h. Type *menu* for more options or *human* to talk to someone now.\n\n${TAGLINE}`
+      `✅ *${isFdb ? "Feedback" : "Complaint"} ticket ${cref} received!*\n\nName: ${ticket.name}\nOrder: ${ticket.orderId}\n${isFdb ? "Feedback" : "Issue"}: ${ticket.issue}\nCallback: ${ticket.callback}\n\nOur team has it — even if we're away right now, we'll reply here when we're back (within 24h). Your ref is *${cref}* — quote it anytime.\n\n${TAGLINE}`
     );
     if (ADMIN()) {
-      await sendText(ADMIN(), `🆕 *New complaint ticket*\nFrom: ${from}\nName: ${ticket.name}\nOrder: ${ticket.orderId}\nIssue: ${ticket.issue}\nCallback: ${ticket.callback}`);
+      await sendText(ADMIN(), `🆕 *New ${isFdb ? "feedback" : "complaint"} ticket ${cref}*\nFrom: ${from}\nName: ${ticket.name}\nOrder: ${ticket.orderId}\n${isFdb ? "Feedback" : "Issue"}: ${ticket.issue}\nCallback: ${ticket.callback}`);
     }
     setMenu(session, ["menu"]);
     await sendButtons(from, "Anything else? 👇", [{ id: "menu", title: "1. Main Menu" }]);
@@ -1110,6 +1121,23 @@ export async function handleIncoming(from, msg, messageId) {
     await showPausedChat(from, actionId.replace("apaused_", ""), session);
     return;
   }
+  if (actionId === "areason_send" || actionId === "areason_cancel") {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    const f = session.form;
+    const ticket = f?.ref && getTicketByRef(String(f.ref).toUpperCase());
+    resetSession(from);
+    if (!ticket) {
+      await sendText(from, "Ticket vanished — nothing sent.");
+      return;
+    }
+    if (actionId === "areason_send") {
+      await sendDeclineNow(from, ticket, f.reason || "");
+    } else {
+      await sendText(from, `Decline cancelled — ${ticket.ref} stays open.`);
+      await showAdminMenu(from, getSession(from));
+    }
+    return;
+  }
   if (actionId.startsWith("cats_more_")) {
     await showCategories(from, parseInt(actionId.replace("cats_more_", ""), 10) || 0, session);
     return;
@@ -1164,12 +1192,16 @@ export async function handleIncoming(from, msg, messageId) {
       await sendFaq(from, "appoint", session);
       return;
     case "human":
+      if (adminOK) { await showAdminMenu(from, session); return; }
       paused.add(from);
       await sendText(from, `Connecting you to a human 🧑‍💼\nPlease describe what you need — someone will reply shortly. (The bot is paused for this chat.)\n\n${TAGLINE}`);
       if (ADMIN()) await notifyHandover(ADMIN(), from, `🙋 *Handover request* from ${from}.`, "Customer asked for a human — tap 💬 Reply to answer them here.");
       return;
     case "complain":
       await startComplaint(from, session);
+      return;
+    case "feedback":
+      await startComplaint(from, session, "feedback");
       return;
     case "faq_delivery":
       await sendFaq(from, "delivery", session);
@@ -1283,8 +1315,16 @@ export async function handleIncoming(from, msg, messageId) {
       return;
     }
   }
-  if (/complain|return|refund|wrong|fake|drop|not.*(working|delivered|started)/.test(lower)) return startComplaint(from, session);
+  if (/feedback|suggestion/.test(lower)) {
+    if (adminOK) { await showAdminMenu(from, session); return; }
+    return startComplaint(from, session, "feedback");
+  }
+  if (/complain|refund|wrong|fake/.test(lower) || /return.*(money|order|refund|payment)|want.*\breturn\b/.test(lower) || /(follower|like|view|number|count).{0,20}drop|drop.{0,20}(follower|like|view|number|count)/.test(lower) || /not.*(working|delivered|started)/.test(lower)) {
+    if (adminOK) { await showAdminMenu(from, session); return; }
+    return startComplaint(from, session);
+  }
   if (/human|agent|talk.*person|call me/.test(lower)) {
+    if (adminOK) { await showAdminMenu(from, session); return; }
     paused.add(from);
     await sendText(from, `Connecting you to a human 🧑‍💼\nPlease describe what you need — someone will reply shortly.\n\n${TAGLINE}`);
     if (ADMIN()) await notifyHandover(ADMIN(), from, `🙋 *Handover request* from ${from}:`, `"${text}"\nChat paused — tap 💬 Reply to answer them here.`);

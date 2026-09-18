@@ -116,14 +116,32 @@ export async function handleDeclineStart(from, ref, session) {
 export async function handleDeclineReason(from, session, text) {
   const ref = session.form?.ref;
   const ticket = ref && getTicketByRef(ref);
-  resetSession(from);
   if (!ticket) {
+    resetSession(from);
     await sendText(from, "Ticket vanished — nothing sent.");
     return;
   }
+  if ((text || "").length > 200) {
+    // Long text looks like a note-to-self, not a customer reason — confirm first.
+    session.step = "awaiting_decline_confirm";
+    session.form = { kind: "decline", ref: ticket.ref, reason: text };
+    session.menu = ["areason_send", "areason_cancel"];
+    await sendButtons(from, `⚠️ This whole text goes to the CUSTOMER as the decline reason:\n\n"${uslice(text, 300)}${text.length > 300 ? "…" : ""}"\n\nSend it?`, [
+      { id: "areason_send", title: "1. ✅ Send it" },
+      { id: "areason_cancel", title: "2. Cancel" },
+    ]);
+    return;
+  }
+  resetSession(from);
+  await sendDeclineNow(from, ticket, text);
+}
+
+/** Fire the decline messages. Shared by the instant path + the long-text confirm. */
+export async function sendDeclineNow(adminFrom, ticket, reason) {
+  const from = adminFrom;
   await sendText(
     ticket.customer,
-    `⚠️ *Payment update for ${ticket.ref}*\n\nWe couldn't confirm your payment: ${text}\n\nPlease check the amount / reference and try again — or type *human* and we'll sort it out 🙏\n\n${TAGLINE}`
+    `⚠️ *Payment update for ${ticket.ref}*\n\nWe couldn't confirm your payment: ${reason}\n\nPlease check the amount / reference and try again — or type *human* and we'll sort it out 🙏\n\n${TAGLINE}`
   );
   await sendText(from, `✅ Customer ${ticket.customer} notified that ${ticket.ref} was declined. Ticket stays open.`);
 }
@@ -208,7 +226,7 @@ export async function resumeChat(adminFrom, target) {
   paused.delete(target);
   resetSession(target);
   await sendText(from, `✅ Bot resumed for ${target}.`);
-  await sendText(target, "You're back with the assistant 🤖. Type *menu* to continue.");
+  await sendText(target, "✅ You're back with the assistant 🤖 (the human left the chat). Type *menu* to continue, or *track* to check your order.");
 }
 
 export async function sendQuoteNow(adminFrom, target, amount) {
@@ -329,7 +347,14 @@ export async function sendRemindNow(adminFrom, target) {
   }
   const tpl = process.env.TEMPLATE_REMINDER;
   if (!tpl) {
-    await sendText(from, "❌ Set TEMPLATE_REMINDER in .env to an approved Utility template first (see TEMPLATES.md).");
+    // No approved template yet → plain text works if they chatted in the last 24h.
+    const amt = ticket.dueNow ?? ticket.total ?? 0;
+    try {
+      await sendText(ticket.customer, `⏰ *Payment reminder — ${ticket.ref}*\n\nHi ${ticket.name || "there"} — your payment of *${formatPrice(amt)}* for ${ticket.product || "your order"} is still open.\n\nTransfer with narration *${ticket.ref}*, then reply *paid* here ✅\n\n${TAGLINE}`);
+      await sendText(from, `✅ Plain-text reminder sent to ${ticket.customer} (delivered because they chatted recently — for customers silent 24h+, add an approved template for guaranteed delivery).`);
+    } catch (e) {
+      await sendText(from, `❌ Couldn't reach ${ticket.customer} — they've been silent over 24h, so WhatsApp blocked the plain reminder. Add an approved template (ask me how) for guaranteed delivery.`);
+    }
     return;
   }
   const due = ticket.dueNow ?? ticket.total ?? 0;

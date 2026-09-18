@@ -8,7 +8,7 @@
  *   bot waits for a bank transaction ID auto-submits the payment for approval.
  */
 import { sendText, sendButtons, sendReaction, sendUrlButton, relayMedia } from "./whatsapp.js";
-import { saveTicket, resetSession, getSession, getTicketByRef, updateTicket } from "./store.js";
+import { saveTicket, resetSession, getSession, getTicketByRef, updateTicket, getTicketsByCustomer } from "./store.js";
 import { findProduct, formatPrice, isRange } from "./catalog.js";
 import { paymentsEnabled, createPaymentLink } from "./payments.js";
 import { peekReward, consumeReward, recordOrderCredit } from "./rewards.js";
@@ -50,12 +50,16 @@ export async function handleIncomingMedia(from, msg, messageId) {
   const label = { image: "photo 📸", video: "video 🎬", audio: "voice note 🎙️", document: "file 📄" }[msg.type] || "file";
   await sendReaction(from, messageId, "👀");
 
+  // Idle receipt? Link it to their latest open order so the boss sees context.
+  const linkTicket = (msg.type === "image" || msg.type === "document")
+    ? getTicketsByCustomer(from).filter((t) => t.ref && ["new_order", "quoted", "deposit_paid"].includes(t.status)).slice(-1)[0]
+    : null;
   let relayed = false;
   if (admin && msg.mediaId) {
     try {
       await relayMedia(admin, msg.mediaId, {
         kind: msg.type === "audio" ? "audio" : msg.type === "video" ? "video" : msg.type === "document" ? "document" : "image",
-        caption: `📥 ${label} from ${from}${msg.caption ? ` — "${msg.caption}"` : ""}`,
+        caption: `📥 ${label} from ${from}${linkTicket ? ` (for *${linkTicket.ref}*?)` : ""}${msg.caption ? ` — "${msg.caption}"` : ""}`,
         filename: msg.filename || undefined,
       });
       relayed = true;
@@ -65,16 +69,17 @@ export async function handleIncomingMedia(from, msg, messageId) {
     }
   }
 
-  // Receipt screenshot while we wait for a bank ID → auto-submit for approval.
-  if (msg.type === "image") {
+  // Receipt (photo or file) while we wait for a bank ID → auto-submit for approval.
+  if (msg.type === "image" || msg.type === "document") {
     const session = getSession(from);
     if (session.step === "awaiting_bankref" && session.form?.ref) {
       const ref = session.form.ref;
       const ticket = getTicketByRef(ref);
       resetSession(from);
       if (ticket) {
-        updateTicket(ref, { bankRef: msg.caption ? `screenshot: ${msg.caption}`.slice(0, 64) : "receipt screenshot" });
-        await sendText(from, `✅ Received! Your receipt for *${ref}* is now with our team — you'll get a confirmation here once approved (usually within minutes ⚡).\n\n${TAGLINE}`);
+        const kindLabel = msg.type === "document" ? "receipt file" : "receipt screenshot";
+        updateTicket(ref, { bankRef: msg.caption ? `${kindLabel}: ${msg.caption}`.slice(0, 64) : kindLabel });
+        await sendText(from, `✅ Received! Your ${kindLabel} for *${ref}* is now with our team — you'll get a confirmation here once approved (usually within minutes ⚡).\n\n${TAGLINE}`);
         if (admin) await sendApprovalCard(admin, getTicketByRef(ref));
         return;
       }
@@ -91,10 +96,15 @@ export async function handleIncomingMedia(from, msg, messageId) {
     );
     return;
   }
+  if ((msg.type === "image" || msg.type === "document") && linkTicket) {
+    await sendText(from, `Got it ✅ — linked to your order *${linkTicket.ref}* (${linkTicket.product || ""}).\nOur team will confirm here shortly. If you haven't, reply *paid* to speed it up ⚡\n\n${TAGLINE}`);
+    if (admin) await sendText(admin, `📥 ${from} sent a ${label} — likely a receipt for *${linkTicket.ref}*. Confirm from 👑 menu → Confirm payment.`);
+    return;
+  }
   await sendText(
     from,
     `Got your ${label} ✅` +
-      (msg.type === "image" ? `\nIf this is your *payment receipt*, also send your order ref (SHOP-XXX) or reply *paid* so we match it fast ⚡` : "") +
+      (msg.type === "image" || msg.type === "document" ? `\nIf this is your *payment receipt*, also send your order ref (SHOP-XXX) or reply *paid* so we match it fast ⚡` : "") +
       `\n${relayed ? "Our team has it and will confirm here." : "Our team will confirm here shortly."}\n\n${TAGLINE}`
   );
 }
