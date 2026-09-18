@@ -17,6 +17,14 @@ import { sendApprovalCard } from "./admin.js";
 const SHOP = () => process.env.SHOP_NAME || "our shop";
 const ADMIN = () => process.env.ADMIN_PHONE || "";
 const TAGLINE = "Fast. Creative. Affordable. That's The Paragon Way! 💪🏽";
+
+function etaFor(ticket = {}) {
+  const s = `${ticket.product || ""} ${ticket.productId || ""}`.toLowerCase();
+  if (/tiktok|instagram|youtube|twitter|facebook|telegram|traffic|bundle|follower|like|view|share|save|subscriber/.test(s)) return "1–8 hours after confirmation";
+  if (/web|site|landing|e-?commerce/.test(s)) return "by appointment (1 day – 2 months depending on scope)";
+  if (/logo|flyer|banner|graphic|brand|design|poster|mockup/.test(s)) return "1–7 days by appointment (flyer/banner often same day)";
+  return "by appointment — we'll confirm your slot shortly";
+}
 const THRESHOLD = () => Number(process.env.INSTALLMENT_THRESHOLD || 20000);
 const depositDue = (total) => (total >= THRESHOLD() ? Math.ceil(total / 2) : total);
 
@@ -158,7 +166,7 @@ export async function handleFlowDone(from, msg) {
   if (total <= 0) {
     const t = saveTicket({ ref, customer: from, status: "paid", total: 0, price: p.price, paidSoFar: 0, dueNow: 0, rewardApplied: reward.type, ...form });
     await recordOrderCredit(from);
-    await sendText(from, `🎉 *Order ${ref} — FREE with your reward!*\n\n🧾 ${t.product}${t.qty > 1 ? ` x${t.qty}` : ""}\n💰 Total: *₦0* — ${reward.label} covered it! 🎁\n👤 ${t.name}\n\nNo payment needed — work is now scheduled 🛠️\n\n${TAGLINE}`);
+    await sendText(from, `🎉 *Order ${ref} — FREE with your reward!*\n\n🧾 ${t.product}${t.qty > 1 ? ` x${t.qty}` : ""}\n💰 Total: *₦0* — ${reward.label} covered it! 🎁\n👤 ${t.name}\n\nNo payment needed — work is now scheduled 🛠️\n⏱️ ETA: *${etaFor(t)}*\n\n${TAGLINE}`);
     if (ADMIN()) {
       await sendText(ADMIN(), `🎁 *FREE REWARD FLOW ${ref}*\nFrom: ${from}\nService: ${t.product} (${t.productId})\nReward: ${reward.type} (auto-applied — customer pays ₦0)\nName: ${t.name}\nPhone: ${t.phone}\n→ Fulfill like a paid order.`);
     }
@@ -179,7 +187,8 @@ export async function handleFlowDone(from, msg) {
     rewardLine +
     (split ? `\n\n💳 *Installments:* pay *50% deposit (${formatPrice(due)})* to start — balance *${formatPrice(total - due)}* before delivery.` : "") +
     `\n👤 ${t.name}` +
-    `\n\n⚠️ Work begins after payment confirmation.`;
+    `\n\n⚠️ *Payment first* — work begins once confirmed, by appointment 📅` +
+    `\n⏱️ ETA after confirmation: *${etaFor(t)}*`;
 
   if (paymentsEnabled()) {
     try {

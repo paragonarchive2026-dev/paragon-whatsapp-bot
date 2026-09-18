@@ -20,6 +20,14 @@ const THRESHOLD = () => Number(process.env.INSTALLMENT_THRESHOLD || 20000);
 const depositDue = (total) => (total >= THRESHOLD() ? Math.ceil(total / 2) : total);
 const DESIGN_CATS = ["webdesign", "graphics"];
 
+function etaFor(ticket = {}) {
+  const s = `${ticket.product || ""} ${ticket.productId || ""}`.toLowerCase();
+  if (/tiktok|instagram|youtube|twitter|facebook|telegram|traffic|bundle|follower|like|view|share|save|subscriber/.test(s)) return "1–8 hours after confirmation";
+  if (/web|site|landing|e-?commerce/.test(s)) return "by appointment (1 day – 2 months depending on scope)";
+  if (/logo|flyer|banner|graphic|brand|design|poster|mockup/.test(s)) return "1–7 days by appointment (flyer/banner often same day)";
+  return "by appointment — we'll confirm your slot shortly";
+}
+
 /** sku shown on the storefront button — must exist in the Commerce catalog too. */
 const THUMBNAIL_SKU = "T001";
 
@@ -129,11 +137,11 @@ export async function handleCartStep(from, session, text) {
     const hasDesign = cats.some((c) => DESIGN_CATS.includes(c));
     const hasBoost = cats.some((c) => !DESIGN_CATS.includes(c));
     if (hasDesign && !hasBoost) {
-      await sendText(from, "Step 3/3: Describe what you want ✍️\n(Business name, style, colors, pages, examples)");
+      await sendText(from, "Step 3/3: Design / website brief ✍️ send all you have:\n\n✅ Business name & logo\n✅ Tagline / what it's for\n✅ Colors, size/format, pages needed\n✅ Content ready? Domain & hosting?\n✅ Examples you like\n\nYou get *1–2 free revisions* on design jobs 😊");
     } else if (hasBoost && !hasDesign) {
-      await sendText(from, "Step 3/3: Drop your *username / links* 🔗\n(e.g. TikTok @handle or post links for each item)");
+      await sendText(from, "Step 3/3: Drop your *public username / links* 🔗\n(e.g. TikTok @handle or post links for each item)\n\n⚠️ Profile / post must be *PUBLIC* — we never ask for your password 🔒");
     } else {
-      await sendText(from, "Step 3/3: Send your *details* ✍️\n(Links/usernames for boost items + brief for design items)");
+      await sendText(from, "Step 3/3: Send your *details* ✍️\n• Boost items → public username/link (profile must be PUBLIC)\n• Design items → business name, colors, size, examples\n\nWe never ask for passwords 🔒");
     }
     return;
   }
@@ -178,7 +186,7 @@ async function completeCartOrder(from, session) {
     const t = saveTicket({ ref, customer: from, status: "paid", total: 0, paidSoFar: 0, dueNow: 0, rewardApplied: reward.type, ...form, details: fullDetails });
     resetSession(from);
     await recordOrderCredit(from);
-    await sendText(from, `🎉 *Order ${ref} — FREE with your reward!*\n\n${itemsText}\n💰 Total: *₦0* — ${reward.label} covered it! 🎁\n👤 ${t.name}\n\nNo payment needed — work is now scheduled 🛠️\n\n${TAGLINE}`);
+    await sendText(from, `🎉 *Order ${ref} — FREE with your reward!*\n\n${itemsText}\n💰 Total: *₦0* — ${reward.label} covered it! 🎁\n👤 ${t.name}\n\nNo payment needed — work is now scheduled 🛠️\n⏱️ ETA: *${etaFor(t)}*\n\n${TAGLINE}`);
     if (ADMIN()) {
       await sendText(ADMIN(), `🎁 *FREE REWARD CART ${ref}*\nFrom: ${from}\n${itemsText}\nReward: ${reward.type} (auto-applied — customer pays ₦0)\nName: ${t.name}\nPhone: ${t.phone}\n→ Fulfill like a paid order.`);
     }
@@ -199,7 +207,8 @@ async function completeCartOrder(from, session) {
     rewardLine +
     (split ? `\n\n💳 *Installments:* pay *50% deposit (${formatPrice(due)})* to start — balance *${formatPrice(total - due)}* before delivery.` : "") +
     `\n👤 ${t.name}` +
-    `\n\n⚠️ Work begins after payment confirmation.`;
+    `\n\n⚠️ *Payment first* — work begins once confirmed, by appointment 📅` +
+    `\n⏱️ ETA after confirmation: *${etaFor(t)}*`;
 
   if (paymentsEnabled()) {
     try {

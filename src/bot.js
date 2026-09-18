@@ -16,6 +16,23 @@ const ADMIN = () => process.env.ADMIN_PHONE || "";
 const TAGLINE = "Fast. Creative. Affordable. That's The Paragon Way! 💪🏽";
 const MENU_IMG = "https://whatsapp-bot-1j6f.onrender.com/img/proof-boost-1.jpg";
 
+
+/** Delivery ETA line from product name/id — used in payment + delivery copy. */
+function etaFor(ticket = {}) {
+  const s = `${ticket.product || ""} ${ticket.productId || ""}`.toLowerCase();
+  if (/tiktok|instagram|youtube|twitter|facebook|telegram|traffic|bundle|follower|like|view|share|save|subscriber/.test(s)) {
+    return "1–8 hours after confirmation";
+  }
+  if (/web|site|landing|e-?commerce/.test(s)) {
+    return "by appointment (1 day – 2 months depending on scope)";
+  }
+  if (/logo|flyer|banner|graphic|brand|design|poster|mockup/.test(s)) {
+    return "1–7 days by appointment (flyer/banner often same day)";
+  }
+  return "by appointment — we'll confirm your slot shortly";
+}
+
+
 // Design services (custom brief) vs boost packs (username/link)
 const DESIGN_CATS = ["webdesign", "graphics"];
 const PACK_CATS = ["tiktok", "instagram", "youtube", "twitter", "facebook", "telegram", "traffic", "bundles"];
@@ -256,7 +273,7 @@ export async function showMenu(to, session = null) {
     { id: "track", title: "2. Track Order" },
     { id: "faqs", title: "3. Help / FAQs" },
   ];
-  const menuBody = `✨ *PARAGON HUB* ✨\n${hello}\nWebsites, graphics & social media boost — how can I help?${refAsk}\n\n${TAGLINE}`;
+  const menuBody = `✨ *PARAGON HUB* ✨\n${hello}\n\nWebsites • Graphics • Social media boost\nHow can we help you today?${refAsk}\n\n${TAGLINE}`;
   try {
     await sendButtons(to, menuBody, menuBtns, { headerImage: MENU_IMG, footer: "Tap a button or reply 1, 2, 3" });
   } catch {
@@ -337,7 +354,7 @@ async function showRefer(to, session = null) {
   setMenu(session, ["rewards", "menu"]);
   await sendText(
     to,
-    `🎁 *Refer & earn — it runs itself!*\n\nYour code: *${code}*\n\nHow it works:\n1️⃣ Share your link (friend taps → presses send, no typing!)\n2️⃣ Friend places their first order → counted automatically\n3️⃣ Rewards apply themselves at YOUR checkout:\n   • 1 friend → 10% off\n   • 3 friends → FREE Starter (any platform)\n   • 5 friends → FREE Growth (any platform)\n\n${link ? `📤 Your share link:\n${link}` : `📤 Tell friends to message us and send: *${code}*`}\n\n${TAGLINE}`
+    `🎁 *Refer & earn — it runs itself!*\n\nYour code: *${code}*\n\nHow it works:\n1️⃣ Share your link (friend taps → presses send, no typing!)\n2️⃣ Friend completes their first payment → counted automatically\n3️⃣ Rewards apply themselves at YOUR checkout:\n   • 1 friend → 10% off\n   • 3 friends → FREE Starter (any platform)\n   • 5 friends → FREE Growth (any platform)\n\n${link ? `📤 Your share link:\n${link}` : `📤 Tell friends to message us and send: *${code}*`}\n\n${TAGLINE}`
   );
   await sendButtons(to, "Check your progress 👇", [
     { id: "rewards", title: "1. My Rewards" },
@@ -530,10 +547,12 @@ async function maybeAskIdentity(to, session, intro) {
 
 async function askOrderDetails(to, session, stepLabel) {
   const p = findProduct(session.form.productId);
-  if (p && DESIGN_CATS.includes(p.cat)) {
-    await sendText(to, `${stepLabel}: Describe what you want ✍️\n(Business name, style, colors, pages, examples — the more detail the better)`);
+  if (p && p.cat === "webdesign") {
+    await sendText(to, `${stepLabel}: Website brief ✍️ send all you have:\n\n✅ Business name & logo\n✅ About the business\n✅ Services / products\n✅ Contact info\n✅ Preferred colors\n✅ Pages needed\n✅ Domain & hosting? (Yes/No)\n✅ Examples you like\n\nThe more detail, the faster we build 🔥`);
+  } else if (p && DESIGN_CATS.includes(p.cat)) {
+    await sendText(to, `${stepLabel}: Design brief ✍️ send all you have:\n\n✅ Business name\n✅ Tagline / slogan (if any)\n✅ What it's for (flyer, logo, brand…)\n✅ Preferred colors\n✅ Size / format needed\n✅ Text & any images/logos\n✅ Examples you like\n\nYou get *1–2 free revisions* 😊`);
   } else {
-    await sendText(to, `${stepLabel}: Drop your *username / link* 🔗\n(e.g. TikTok @handle or post link, IG @handle, YouTube link, website URL) + anything we should know`);
+    await sendText(to, `${stepLabel}: Drop your *public username / link* 🔗\n(e.g. TikTok @handle or post link, IG @handle, YouTube link)\n\n⚠️ Make sure the profile / post is set to *PUBLIC* before we start — private accounts can't receive boosts.\nWe never ask for your password 🔒`);
   }
 }
 
@@ -542,7 +561,9 @@ async function startComplaint(to, session, kind = "complaint") {
   session.step = "awaiting_name";
   session.form = { kind };
   const what = kind === "feedback" ? "💡 Filing a *feedback ticket*" : "📝 Filing a *complaint ticket*";
-  const sorry = kind === "feedback" ? "We love feedback — let's record yours 🙏" : "Sorry about that — let's fix it 🙏";
+  const sorry = kind === "feedback"
+    ? "We love feedback — let's record yours 🙏"
+    : "Hello! 😊 We sincerely apologize for the inconvenience.\nPlease give us a moment — we'll look into this and resolve it fast 🙏";
   await sendText(to, `${sorry}\n\n${what} (Step 1/4): What is your *full name*?\n(Type *cancel* anytime to stop)`);
 }
 
@@ -868,7 +889,7 @@ export async function handleIncoming(from, msg, messageId) {
       resetSession(from);
       await recordOrderCredit(from);
       await sendReaction(from, messageId, "🎉");
-      await sendText(from, `🎉 *Order ${ref} — FREE with your reward!*\n\n🧾 ${t.product}${t.qty > 1 ? ` x${t.qty}` : ""}\n💰 Total: *₦0* — ${reward.label} covered it! 🎁\n👤 ${t.name}\n\nNo payment needed — work is now scheduled 🛠️\n\n${TAGLINE}`);
+      await sendText(from, `🎉 *Order ${ref} — FREE with your reward!*\n\n🧾 ${t.product}${t.qty > 1 ? ` x${t.qty}` : ""}\n💰 Total: *₦0* — ${reward.label} covered it! 🎁\n👤 ${t.name}\n\nNo payment needed — work is now scheduled 🛠️\n⏱️ ETA: *${etaFor(t)}*\n\n${TAGLINE}`);
       if (ADMIN()) {
         await sendText(ADMIN(), `🎁 *FREE REWARD ORDER ${ref}*\nFrom: ${from}\nService: ${t.product} (${t.productId})${t.qty > 1 ? ` x${t.qty}` : ""}\nReward: ${reward.type} (auto-applied — customer pays ₦0)\nName: ${t.name}\nPhone: ${t.phone}\nDetails: ${t.details}\n→ Fulfill like a paid order.`);
       }
@@ -893,7 +914,8 @@ export async function handleIncoming(from, msg, messageId) {
       rewardLine +
       (split ? `\n\n💳 *Installments:* pay *50% deposit (${formatPrice(due)})* to start — balance *${formatPrice(total - due)}* before delivery.` : "") +
       `\n👤 ${t.name}\n📝 ${t.details}` +
-      `\n\n⚠️ Work begins after payment confirmation.`;
+      `\n\n⚠️ *Payment first* — work begins once confirmed, by appointment 📅` +
+      `\n⏱️ ETA after confirmation: *${etaFor(t)}*`;
 
     if (paymentsEnabled()) {
       try {
@@ -963,7 +985,7 @@ export async function handleIncoming(from, msg, messageId) {
     resetSession(from);
     await sendText(
       from,
-      `✅ *${isFdb ? "Feedback" : "Complaint"} ticket ${cref} received!*\n\nName: ${ticket.name}\nOrder: ${ticket.orderId}\n${isFdb ? "Feedback" : "Issue"}: ${ticket.issue}\nCallback: ${ticket.callback}\n\nOur team has it — even if we're away right now, we'll reply here when we're back (within 24h). Your ref is *${cref}* — quote it anytime.\n\n${TAGLINE}`
+      `✅ *${isFdb ? "Feedback" : "Complaint"} ticket ${cref} received!*\n\nName: ${ticket.name}\nOrder: ${ticket.orderId}\n${isFdb ? "Feedback" : "Issue"}: ${ticket.issue}\nCallback: ${ticket.callback}\n\nWe've got it — our team is looking into this now and will reply here as soon as possible (within 24h) 🙏\nYour ref is *${cref}* — quote it anytime.\n\n${TAGLINE}`
     );
     if (ADMIN()) {
       await sendText(ADMIN(), `🆕 *New ${isFdb ? "feedback" : "complaint"} ticket ${cref}*\nFrom: ${from}\nName: ${ticket.name}\nOrder: ${ticket.orderId}\n${isFdb ? "Feedback" : "Issue"}: ${ticket.issue}\nCallback: ${ticket.callback}`);
@@ -1265,7 +1287,7 @@ export async function handleIncoming(from, msg, messageId) {
     if (code) {
       const res = await recordJoin(from, code);
       if (res.ok) {
-        await sendText(from, `Welcome to *${SHOP()}*! 🎉\nYou joined with a referral — great taste already 😄\nYour friend earns once you place your first order!`);
+        await sendText(from, `Welcome to *${SHOP()}*! 🎉\nYou joined with a referral — great taste already 😄\nYour friend earns once you complete your first payment!`);
         await showMenu(from, session);
         return;
       }
@@ -1346,7 +1368,7 @@ export async function handleIncoming(from, msg, messageId) {
     if (adminOK) { await showAdminMenu(from, session); return; }
     return startComplaint(from, session, "feedback");
   }
-  if (/complain|refund|wrong|fake/.test(lower) || /return.*(money|order|refund|payment)|want.*\breturn\b/.test(lower) || /(follower|like|view|number|count).{0,20}drop|drop.{0,20}(follower|like|view|number|count)/.test(lower) || /not.*(working|delivered|started)/.test(lower)) {
+  if (/complain|refund|wrong|fake/.test(lower) || /return.*(money|order|refund|payment)|want.*\breturn\b/.test(lower) || /(follower|like|view|number|count).{0,20}drop|drop.{0,20}(follower|like|view|number|count)/.test(lower) || /not.*(working|delivered|started|received)/.test(lower) || /haven'?t (received|got|seen)|still waiting|been (long|days|hours)|where is my (order|job|boost|design)/.test(lower)) {
     if (adminOK) { await showAdminMenu(from, session); return; }
     return startComplaint(from, session);
   }
@@ -1361,6 +1383,30 @@ export async function handleIncoming(from, msg, messageId) {
     await handleProofAction(from, "proof", session);
     return;
   }
+
+  // Negotiate / "too expensive" → NEVER cut the list price; redirect to better-value packages
+  if (/(too (much|expensive|high)|reduce|negotiat|can you (drop|lower|cut)|price (is )?(high|too)|make it cheaper|any cheaper|discount the price|less expensive)/.test(lower)) {
+    setMenu(session, ["shop", "proof", "human"]);
+    await sendText(from, `Hello! 😊 We understand your concern!\n\nOur prices are already very affordable for the quality — we *don't cut list prices*.\n\nWhat we *can* do: point you to a *package that gives MORE for LESS* (Starter / Growth / Pro, or a bundle).\n\nTap below to see packages, or talk to us for a custom fit 🔥\n\n${TAGLINE}`);
+    await sendButtons(from, "See better-value options 👇", [
+      { id: "shop", title: "1. 🛍️ View Packages" },
+      { id: "proof", title: "2. See Proof" },
+      { id: "human", title: "3. Talk to Human" },
+    ], { footer: "Tap or reply 1, 2, 3" });
+    return;
+  }
+  // Rude / scam accusation — stay calm, never argue (script Scenario 10)
+  if (/\b(scam(mer)?|fraud|thief|rubbish|useless|waste|rip ?off|fake company|419)\b/.test(lower) && !/fake (follower|like|view|engagement)/.test(lower)) {
+    setMenu(session, ["proof", "human", "track"]);
+    await sendText(from, `Hello! 😊 We understand your frustration!\n\nWe assure you *${SHOP()}* is 100% legit — we never ask for passwords, and every job is tracked here in chat.\n\nPlease give us a chance to resolve this. What exactly is the issue? We're here to help 🙏\n\n${TAGLINE}`);
+    await sendButtons(from, "How can we help? 👇", [
+      { id: "proof", title: "1. See Proof" },
+      { id: "human", title: "2. Talk to Human" },
+      { id: "track", title: "3. Track Order" },
+    ], { footer: "Tap or reply 1, 2, 3" });
+    return;
+  }
+
   if (/custom|special.*(package|order)|specific numbers/.test(lower)) {
     await sendFaq(from, "custom", session);
     return;

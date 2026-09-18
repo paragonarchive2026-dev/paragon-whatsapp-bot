@@ -75,7 +75,7 @@ app.post("/webhooks/paystack", express.raw({ type: "application/json" }), async 
     if (fullyPaid) {
       await sendText(
         ticket.customer,
-        `✅ *Payment confirmed!*\n\n🧾 Order *${ticket.ref}*\n💰 ${money(paidSoFar)} received in full via ${channel || "Paystack"}\n\nWork is scheduled — we'll update you here 🛠️\nType *menu* for anything else.\n\n${TAG}`
+        `✅ *Payment confirmed!* Thank you so much! 🙏🏽\n\n🧾 Order *${ticket.ref}*\n💰 ${money(paidSoFar)} received in full via ${channel || "Paystack"}\n\nYour order is now being processed 🛠️\nWe'll notify you here once it's done!\n\n${TAG}`
       );
       if (ADMIN) {
         await sendText(ADMIN(), `💰 *PAID IN FULL ${ticket.ref}*\nService: ${ticket.product}${ticket.qty > 1 ? ` x${ticket.qty}` : ""}\nTotal: ${money(total)}\nCustomer: ${ticket.name} (${ticket.customer})\nDetails: ${ticket.details || ""}\nChannel: ${channel}`);
@@ -85,7 +85,7 @@ app.post("/webhooks/paystack", express.raw({ type: "application/json" }), async 
       const bal = Math.max(0, total - paidSoFar);
       await sendText(
         ticket.customer,
-        `✅ *Deposit confirmed!*\n\n🧾 Order *${ticket.ref}*\n💰 ${money(paidNow)} received (${money(paidSoFar)} of ${money(total)})\n\nWork is scheduled 🛠️\nBalance *${money(bal)}* due before delivery.\n\n${TAG}`
+        `✅ *Deposit confirmed!* Thank you! 🙏🏽\n\n🧾 Order *${ticket.ref}*\n💰 ${money(paidNow)} received (${money(paidSoFar)} of ${money(total)})\n\nWork is scheduled 🛠️\nBalance *${money(bal)}* due before delivery.\n\n${TAG}`
       );
       if (ADMIN()) {
         await sendText(ADMIN(), `💰 *DEPOSIT ${ticket.ref}* — ${money(paidNow)} (${money(paidSoFar)} of ${money(total)})\nCustomer: ${ticket.name} (${ticket.customer})\nStart work; collect balance ${money(bal)} before delivery: /balance ${ticket.ref}`);

@@ -15,6 +15,22 @@ import { peekReward, consumeReward, recordOrderCredit, referralStats } from "./r
 const ADMIN = () => process.env.ADMIN_PHONE || "";
 const TAGLINE = "Fast. Creative. Affordable. That's The Paragon Way! 💪🏽";
 const BOSS_IMG = "https://whatsapp-bot-1j6f.onrender.com/img/proof-logo-2.jpg";
+
+/** Delivery ETA line from product name/id. */
+function etaFor(ticket = {}) {
+  const s = `${ticket.product || ""} ${ticket.productId || ""}`.toLowerCase();
+  if (/tiktok|instagram|youtube|twitter|facebook|telegram|traffic|bundle|follower|like|view|share|save|subscriber/.test(s)) {
+    return "1–8 hours after confirmation";
+  }
+  if (/web|site|landing|e-?commerce/.test(s)) {
+    return "by appointment (1 day – 2 months depending on scope)";
+  }
+  if (/logo|flyer|banner|graphic|brand|design|poster|mockup/.test(s)) {
+    return "1–7 days by appointment (flyer/banner often same day)";
+  }
+  return "by appointment — we'll confirm your slot shortly";
+}
+
 const isAdmin = (from) => ADMIN() && from === ADMIN();
 
 const uslice = (s, n) => [...String(s || "")].slice(0, n).join("");
@@ -59,15 +75,15 @@ export async function confirmTicketPayment(ref, amount, channel = "manual") {
   if (fully) {
     await sendText(
       ticket.customer,
-      `✅ *Payment confirmed!*\n\n🧾 Order *${ticket.ref}*${ticket.product ? ` (${ticket.product})` : ""}\n💰 Paid in full: *${formatPrice(newPaid)}*\nWork is now scheduled — we'll update you here 🛠️\nType *menu* for anything else.\n\n${TAGLINE}`
+      `✅ *Payment confirmed!* Thank you so much! 🙏🏽\n\n🧾 Order *${ticket.ref}*${ticket.product ? ` (${ticket.product})` : ""}\n💰 Paid in full: *${formatPrice(newPaid)}*\n\nYour order is now being processed 🛠️\n⏱️ Estimated delivery: *${etaFor(ticket)}*\n\nWe'll notify you here once it's done!\n\n${TAGLINE}`
     );
     await custNext(ticket.customer, TRACK_MENU);
   } else {
     await sendText(
       ticket.customer,
-      `✅ *Payment received!* ${formatPrice(amount)}\n\n🧾 Order *${ticket.ref}*` +
-        (total ? `\nPaid *${formatPrice(newPaid)}* of *${formatPrice(total)}* — balance *${formatPrice(total - newPaid)}* due before delivery.` : "") +
-        `\nWork is scheduled 🛠️\n\n${TAGLINE}`
+      `✅ *Payment received!* Thank you! 🙏🏽\n\n🧾 Order *${ticket.ref}*` +
+        (total ? `\nPaid *${formatPrice(newPaid)}* of *${formatPrice(total)}* — balance *${formatPrice(total - newPaid)}* due before delivery.` : `\nAmount: *${formatPrice(amount)}*`) +
+        `\n\nWork is scheduled 🛠️\n⏱️ Estimated delivery after full payment: *${etaFor(ticket)}*\n\n${TAGLINE}`
     );
     await custNext(ticket.customer, TRACK_MENU);
   }
@@ -602,15 +618,15 @@ export async function deliverTicket(adminFrom, target) {
   }
   updateTicket(ticket.ref, { status: "delivered", deliveredAt: new Date().toISOString() });
   const cs = getSession(ticket.customer);
-  cs.menu = ["refer", "shop", "menu"];
+  cs.menu = ["refer", "feedback", "shop"];
   await sendText(
     ticket.customer,
-    `🎉 *Order ${ticket.ref} delivered!*\n\n🧾 ${ticket.product || ""}${ticket.qty > 1 ? ` x${ticket.qty}` : ""}\nEnjoy — and thanks for trusting ${process.env.SHOP_NAME || "us"} 🙏\n\nLoved it? Refer a friend and earn: 1 friend = 10% off your next order, automatically 🎁\n\n${TAGLINE}`
+    `✅ *Order Complete!*\n\n🧾 Order *${ticket.ref}* — ${ticket.product || ""}${ticket.qty > 1 ? ` x${ticket.qty}` : ""}\n\nYour order has been delivered! 🔥\nPlease check and confirm you can see the changes.\n\n⭐ We'd love a quick review — and please refer us to friends & family!\nRefer 1 friend = *10% off* your next order (automatic) 🎁\n\nThank you for choosing ${process.env.SHOP_NAME || "Paragon Hub"}! 💪🏽\n\n${TAGLINE}`
   );
   await sendButtons(ticket.customer, "What next? 👇", [
     { id: "refer", title: "1. 🎁 Refer & earn" },
-    { id: "shop", title: "2. 🛍️ Shop again" },
-    { id: "menu", title: "3. Main Menu" },
+    { id: "feedback", title: "2. ⭐ Leave review" },
+    { id: "shop", title: "3. 🛍️ Shop again" },
   ]);
   await sendText(from, `✅ ${ticket.ref} marked DELIVERED. Customer notified.`);
 }

@@ -113,7 +113,7 @@ export async function recordJoin(newPhone, code) {
   try {
     await sendText(owner, u.creditGiven
       ? `🎉 Someone joined with YOUR referral code — but they're already an old customer, so no new reward this time. Keep sharing with NEW people! 🙌\n\n${TAGLINE}`
-      : `🎉 Someone just joined with YOUR referral code!\nYou'll earn your reward automatically once they complete their first order. Keep sharing! 🙌\n\n${TAGLINE}`);
+      : `🎉 Someone just joined with YOUR referral code!\nYou'll earn your reward automatically once they complete their first payment. Keep sharing! 🙌\n\n${TAGLINE}`);
   } catch { /* notify is best-effort */ }
   return { ok: true, owner };
 }
