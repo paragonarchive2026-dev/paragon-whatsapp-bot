@@ -7,7 +7,7 @@
  * ALL actions are sender-guarded: only ADMIN_PHONE can use them.
  */
 import { sendText, sendButtons, sendList, sendReaction, sendUrlButton, sendTemplate } from "./whatsapp.js";
-import { getTicketByRef, updateTicket, getAllTickets, resetSession, paused } from "./store.js";
+import { getTicketByRef, updateTicket, getAllTickets, getSession, resetSession, paused } from "./store.js";
 import { formatPrice } from "./catalog.js";
 import { paymentsEnabled, createPaymentLink } from "./payments.js";
 import { peekReward, consumeReward } from "./rewards.js";
@@ -452,9 +452,9 @@ export async function showPausedChats(to, session = null) {
     await sendButtons(to, "Back 👇", [{ id: "adminmenu", title: "1. 👑 Boss Menu" }]);
     return;
   }
-  if (session) session.menu = [...list.map((p) => `aresume_${p}`), "adminmenu"];
+  if (session) session.menu = [...list.map((p) => `apaused_${p}`), "adminmenu"];
   await sendList(to, "⏸️ *Paused chats* — tap one to hand back to the bot 👇", "Paused chats", [
-    { title: "Paused", rows: list.map((p, i) => ({ id: `aresume_${p}`, title: num(i, p) })) },
+    { title: "Paused", rows: list.map((p, i) => ({ id: `apaused_${p}`, title: num(i, p) })) },
     { title: "More", rows: [{ id: "adminmenu", title: num(list.length, "👑 Boss menu") }] },
   ]);
 }
@@ -464,4 +464,47 @@ export async function adminHelp(to, session = null) {
   if (session) session.menu = ["adminmenu"];
   await sendText(to, "👑 *Boss quick guide*\n• Send *admin* anytime = this button menu\n• *pending* = orders needing approval\n• Tap ✅ Approve on payment cards\n• Typing still works: /quote /paid /balance /remind /resume");
   await sendButtons(to, "Back 👇", [{ id: "adminmenu", title: "1. 👑 Boss Menu" }]);
+}
+
+// ---- Human-agent reply: the boss answers paused customers from inside WhatsApp ----
+/** Handover alert card: tap to answer or hand back. Admin-only (guarded by caller). */
+export async function notifyHandover(to, custPhone, headline, preview) {
+  const s = getSession(to);
+  s.menu = [`areply_${custPhone}`, `aresume_${custPhone}`];
+  await sendText(to, `${headline}\n${preview}`);
+  await sendButtons(to, `Answer ${custPhone} 👇`, [
+    { id: `areply_${custPhone}`, title: "1. 💬 Reply" },
+    { id: `aresume_${custPhone}`, title: "2. ✅ Resume" },
+  ]);
+}
+
+/** Enter reply mode: boss texts go straight to the customer until done/cancel. */
+export async function enterReplyMode(to, phone, session) {
+  const p = String(phone || "").trim();
+  if (!p || !paused.has(p)) {
+    if (session) session.menu = ["adminmenu"];
+    await sendText(to, `That chat isn't paused — the bot is already handling ${p || "them"} 🤖`);
+    await sendButtons(to, "Back 👇", [{ id: "adminmenu", title: "1. 👑 Boss Menu" }]);
+    return;
+  }
+  session.step = "admin_reply";
+  session.form = { phone: p };
+  await sendText(to, `💬 Replying to *${p}* — everything you type now goes straight to them.\nSend *done* when finished (or *cancel*).`);
+}
+
+/** Paused-chat action card: reply, resume, or back. Admin-only (guarded by caller). */
+export async function showPausedChat(to, phone, session = null) {
+  const p = String(phone || "").trim();
+  if (!paused.has(p)) {
+    if (session) session.menu = ["adminmenu"];
+    await sendText(to, `${p || "That chat"} isn't paused anymore — bot is on it 🤖`);
+    await sendButtons(to, "Back 👇", [{ id: "adminmenu", title: "1. 👑 Boss Menu" }]);
+    return;
+  }
+  if (session) session.menu = [`areply_${p}`, `aresume_${p}`, "adminmenu"];
+  await sendButtons(to, `⏸️ Chat with *${p}* is paused. What now? 👇`, [
+    { id: `areply_${p}`, title: "1. 💬 Reply" },
+    { id: `aresume_${p}`, title: "2. ✅ Resume" },
+    { id: "adminmenu", title: "3. Boss Menu" },
+  ]);
 }

@@ -9,7 +9,7 @@ import { startCartCheckout, handleCartStep, sendNativeCatalog } from "./cart.js"
 import { handleProofAction } from "./proof.js";
 import { handleFlowDone, handleIncomingMedia } from "./growth.js";
 import { getOrCreateCode, parseCode, shareLink, recordJoin, recordOrderCredit, peekReward, consumeReward, rewardsSummary, recordAcquisition } from "./rewards.js";
-import { confirmTicketPayment, handleApprove, handleDeclineStart, handleDeclineReason, sendApprovalCard, showPendingDashboard, showTicketAdmin, showAdminMenu, showAdminMore, pickTicketFor, showPaidConfirm, askQuoteAmount, askPaidAmount, showPausedChats, adminHelp, sendQuoteNow, sendBalanceNow, sendRemindNow, resumeChat, reportPaidResult, depositDue } from "./admin.js";
+import { confirmTicketPayment, handleApprove, handleDeclineStart, handleDeclineReason, sendApprovalCard, showPendingDashboard, showTicketAdmin, showAdminMenu, showAdminMore, pickTicketFor, showPaidConfirm, askQuoteAmount, askPaidAmount, showPausedChats, adminHelp, sendQuoteNow, sendBalanceNow, sendRemindNow, resumeChat, reportPaidResult, depositDue, notifyHandover, enterReplyMode, showPausedChat } from "./admin.js";
 
 const SHOP = () => process.env.SHOP_NAME || "our shop";
 const ADMIN = () => process.env.ADMIN_PHONE || "";
@@ -542,6 +542,7 @@ export async function handleIncoming(from, msg, messageId) {
 
   // ---- Admin commands (from your own number) ----
   if (ADMIN() && from === ADMIN() && msg.text?.startsWith("/")) {
+    resetSession(from); // typing any /command also exits boss reply-mode
     const [cmd, target, extra] = msg.text.trim().split(/\s+/);
     if (cmd === "/resume" && target) {
       await resumeChat(from, target);
@@ -596,12 +597,12 @@ export async function handleIncoming(from, msg, messageId) {
       const preview = msg.type === "order"
         ? `🛒 CART sent (${msg.order?.product_items?.length || 0} items)`
         : (msg.text || msg.buttonId || msg.listId || "(media)");
-      await sendText(ADMIN(), `💬 *Customer ${from}* (bot paused):\n${preview}\n\nReply them from this bot number's inbox, or /resume ${from} (or *admin* → Paused chats) to hand back to bot.`);
+      await notifyHandover(ADMIN(), from, `💬 *Customer ${from}* (bot paused):`, preview);
     }
     return;
   }
 
-  const session = getSession(from);
+  let session = getSession(from);
   const text = (msg.text || "").trim();
   const lower = text.toLowerCase();
   let actionId = msg.buttonId || msg.listId || "";
@@ -630,6 +631,11 @@ export async function handleIncoming(from, msg, messageId) {
     return;
   }
 
+  // ---- Boss reply-mode is text-only (button taps pass through; customer media unaffected) ----
+  if (adminOK && !actionId && session.step === "admin_reply" && msg.type && msg.type !== "text") {
+    await sendText(from, "📝 Reply mode is text-only for now — type your message, or *done* to stop.");
+    return;
+  }
   // ---- Customer media: receipts, voice notes, stickers... (never falls to menus) ----
   if (["image", "video", "audio", "document", "sticker", "location", "contacts", "reaction"].includes(msg.type)) {
     await handleIncomingMedia(from, msg, messageId);
@@ -721,6 +727,34 @@ export async function handleIncoming(from, msg, messageId) {
     resetSession(from);
     await reportPaidResult(from, ticket, amount);
     return;
+  }
+  // ---- Boss reply mode: every text goes to the paused customer ----
+  if (session.step === "admin_reply") {
+    if (!adminOK) { resetSession(from); return; }
+    if (actionId) {
+      // Tapping any button exits reply mode; the tap itself is handled normally below.
+      resetSession(from);
+      session = getSession(from);
+    } else if (/^(done|stop|finish)$/.test(lower)) {
+      const phone = session.form?.phone;
+      resetSession(from);
+      setMenu(session, [`aresume_${phone}`, "adminmenu"]);
+      await sendButtons(from, `Stopped replying to ${phone}. Hand them back to the bot?`, [
+        { id: `aresume_${phone}`, title: "1. ✅ Resume bot" },
+        { id: "adminmenu", title: "2. ⏸ Keep paused" },
+      ]);
+      return;
+    } else {
+      const phone = session.form?.phone;
+      if (!phone || !text) {
+        resetSession(from);
+        await showAdminMenu(from, getSession(from));
+        return;
+      }
+      await sendText(phone, `🧑‍💼 *Paragon team:*\n${text}`);
+      await sendReaction(from, messageId, "✅");
+      return;
+    }
   }
 
   // ---- ORDER flow steps ----
@@ -924,7 +958,7 @@ export async function handleIncoming(from, msg, messageId) {
       resetSession(from);
       paused.add(from);
       await sendText(from, `Connecting you to a human 🧑‍💼\nPlease describe what you need — someone will reply shortly.\n\n${TAGLINE}`);
-      if (ADMIN()) await sendText(ADMIN(), `🙋 *Handover request* from ${from}. Chat paused.`);
+      if (ADMIN()) await notifyHandover(ADMIN(), from, `🙋 *Handover request* from ${from}.`, "Chat paused — tap 💬 Reply to answer them here.");
       return;
     }
     resetSession(from);
@@ -1049,6 +1083,16 @@ export async function handleIncoming(from, msg, messageId) {
     await resumeChat(from, actionId.replace("aresume_", ""));
     return;
   }
+  if (actionId.startsWith("areply_")) {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await enterReplyMode(from, actionId.replace("areply_", ""), session);
+    return;
+  }
+  if (actionId.startsWith("apaused_")) {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await showPausedChat(from, actionId.replace("apaused_", ""), session);
+    return;
+  }
   if (actionId.startsWith("cats_more_")) {
     await showCategories(from, parseInt(actionId.replace("cats_more_", ""), 10) || 0, session);
     return;
@@ -1105,7 +1149,7 @@ export async function handleIncoming(from, msg, messageId) {
     case "human":
       paused.add(from);
       await sendText(from, `Connecting you to a human 🧑‍💼\nPlease describe what you need — someone will reply shortly. (The bot is paused for this chat.)\n\n${TAGLINE}`);
-      if (ADMIN()) await sendText(ADMIN(), `🙋 *Handover request* from ${from}. Chat paused. Reply them, then /resume ${from} (or *admin* → Paused chats).`);
+      if (ADMIN()) await notifyHandover(ADMIN(), from, `🙋 *Handover request* from ${from}.`, "Customer asked for a human — tap 💬 Reply to answer them here.");
       return;
     case "complain":
       await startComplaint(from, session);
@@ -1226,7 +1270,7 @@ export async function handleIncoming(from, msg, messageId) {
   if (/human|agent|talk.*person|call me/.test(lower)) {
     paused.add(from);
     await sendText(from, `Connecting you to a human 🧑‍💼\nPlease describe what you need — someone will reply shortly.\n\n${TAGLINE}`);
-    if (ADMIN()) await sendText(ADMIN(), `🙋 *Handover request* from ${from}: "${text}". Chat paused — reply them, then /resume ${from} (or *admin* → Paused chats).`);
+    if (ADMIN()) await notifyHandover(ADMIN(), from, `🙋 *Handover request* from ${from}:`, `"${text}"\nChat paused — tap 💬 Reply to answer them here.`);
     return;
   }
   if (/proof(?!\s+of\s+payment)|sample|example|portfolio|past work|previous work|see.*work|show.*work/.test(lower)) {
