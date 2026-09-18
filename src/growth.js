@@ -132,7 +132,7 @@ export async function handleFlowDone(from, msg) {
       from,
       `📩 *Request ${ref} received!*\n\n🧾 ${t.product}\n💰 Usual range: *${formatPrice(p.priceMin)} – ${formatPrice(p.priceMax)}*\n👤 ${t.name}\n\nWe'll send your exact price + payment steps here shortly.\n⚠️ Reminder: payment first — work begins after confirmation, by appointment 📅\n\n${TAGLINE}`
     );
-    if (ADMIN()) await sendText(ADMIN(), `🆕 *FLOW QUOTE ${ref}*\nFrom: ${from}\nService: ${t.product}\nName: ${t.name}\nPhone: ${t.phone}\nDetails: ${t.details}\n\nSend quote: /quote ${ref} <amount>`);
+    if (ADMIN()) await sendText(ADMIN(), `🆕 *FLOW QUOTE ${ref}*\nFrom: ${from}\nService: ${t.product}\nName: ${t.name}\nPhone: ${t.phone}\nDetails: ${t.details}\n\nSend quote: /quote ${ref} 15000`);
     return;
   }
 

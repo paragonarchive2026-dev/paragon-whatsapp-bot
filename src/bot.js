@@ -26,6 +26,12 @@ const depositDue = (total) => (total >= THRESHOLD() ? Math.ceil(total / 2) : tot
 // ---- Numbered menus: every option shows "1. ..." and typing the number works ----
 // (unicode-safe slicing: never splits an emoji in half)
 const uslice = (s, n) => [...String(s || "")].slice(0, n).join("");
+// Amounts typed by humans: tolerate <5000>, ₦10,000, "10,000" — our own examples
+// show <amount>, so people copy the brackets. Strip everything but digits.
+const cleanAmount = (s) => {
+  const n = parseInt(String(s || "").replace(/[^\d]/g, ""), 10);
+  return Number.isFinite(n) ? n : NaN;
+};
 const num = (i, title, max = 24) => `${i + 1}. ${uslice(title, max - `${i + 1}. `.length)}`;
 function setMenu(session, ids) {
   if (session) session.menu = ids;
@@ -179,6 +185,13 @@ async function handlePaidClaim(from, session, messageId) {
   const unpaid = getTicketsByCustomer(from).filter((t) => t.ref && ["new_order", "quoted", "deposit_paid"].includes(t.status));
   if (!unpaid.length) {
     const mine = getTicketsByCustomer(from).filter((t) => t.ref);
+    const awaiting = mine.filter((t) => t.status === "awaiting_quote");
+    if (awaiting.length) {
+      const t = awaiting[awaiting.length - 1];
+      await sendText(from, `Not yet — your price quote for *${t.ref}* (${t.product}) isn't ready 🕐\nWe'll send your exact price + pay steps here the moment it's ready. No need to pay before then 🙏\n\n${TAGLINE}`);
+      if (ADMIN()) await sendText(ADMIN(), `💰 ${from} tried to PAY ${t.ref} but no quote sent yet — send it now: /quote ${t.ref} 15000`);
+      return;
+    }
     if (mine.length) {
       await sendText(from, `Good news — your orders here all look settled ✅\nIf you just paid for something new, send the order ref (SHOP-XXX) so I match it right 🙏\n\n${TAGLINE}`);
     } else {
@@ -540,7 +553,7 @@ export async function handleIncoming(from, msg, messageId) {
       return;
     }
     if (cmd === "/quote" && target) {
-      const amount = parseInt(extra, 10);
+      const amount = cleanAmount(extra);
       const ticket = getTicketByRef(String(target).toUpperCase());
       if (!ticket) {
         await sendText(from, `❌ No ticket ${target}.`);
@@ -641,7 +654,7 @@ export async function handleIncoming(from, msg, messageId) {
         return;
       }
       const total = ticket.total || 0;
-      const amt = extra ? parseInt(extra, 10) : (ticket.dueNow ?? total);
+      const amt = extra ? cleanAmount(extra) : (ticket.dueNow ?? total);
       if (!amt || amt <= 0) {
         await sendText(from, "❌ Specify amount: /paid SHOP-XXX 15000");
         return;
@@ -683,6 +696,14 @@ export async function handleIncoming(from, msg, messageId) {
       return;
     }
     await sendText(from, "Admin commands:\n/resume <number> — hand chat back to bot\n/quote <ref> <amount> — send exact quote + payment link\n/paid <ref> [amount] — confirm a manual payment\n/balance <ref> — send balance payment link\n/remind <ref> — resend payment reminder (needs approved template)\n(or tap ✅ Approve on payment cards / type *pending* for the dashboard)");
+    return;
+  }
+
+  // Admin typed a command mid-sentence ("quote: /quote SHOP-X ...")? Point at the
+  // format instead of letting it fall through to track-lookup.
+  if (ADMIN() && from === ADMIN() && !(msg.buttonId || msg.listId) && getSession(from).step === "idle" && /\/(quote|paid|balance|remind|resume)\b/.test(msg.text || "")) {
+    const mref = (msg.text || "").match(/SHOP-[A-Z0-9]+/i);
+    await sendText(from, `Almost! Admin commands must START with / (nothing before it). Try:\n/quote ${mref ? mref[0].toUpperCase() : "SHOP-XXX"} 15000\n(no < > brackets — plain digits only)`);
     return;
   }
 
@@ -845,7 +866,7 @@ export async function handleIncoming(from, msg, messageId) {
         `📩 *Request ${ref} received!*\n\n🧾 ${t.product}\n💰 Usual range: *${formatPrice(t.priceMin)} – ${formatPrice(t.priceMax)}*\n👤 ${t.name}\n📝 ${t.details}\n\nWe'll send your exact price + payment link here shortly.\n⚠️ Reminder: payment first — work begins after confirmation, by appointment 📅\n\n${TAGLINE}`
       );
       if (ADMIN()) {
-        await sendText(ADMIN(), `🆕 *QUOTE REQUEST ${ref}*\nFrom: ${from}\nService: ${t.product}\nName: ${t.name}\nPhone: ${t.phone}\nBrief: ${t.details}\n\nSend quote: /quote ${ref} <amount>`);
+        await sendText(ADMIN(), `🆕 *QUOTE REQUEST ${ref}*\nFrom: ${from}\nService: ${t.product}\nName: ${t.name}\nPhone: ${t.phone}\nBrief: ${t.details}\n\nSend quote: /quote ${ref} 15000`);
       }
       setMenu(session, ["menu", "human"]);
       await sendButtons(from, "We'll be in touch 👇", [
@@ -1164,7 +1185,7 @@ export async function handleIncoming(from, msg, messageId) {
       // unknown code → fall through to normal routing (never dead-end)
     }
   }
-  if (/^(hi|hello|hey|start|menu)/i.test(lower)) return showMenu(from, session);
+  if (/^(hi|hello|hey|start|menu|cancel)/i.test(lower)) return showMenu(from, session);
   {
     // "find X" / "search X" → instant search
     const m = lower.match(/^(find|search)\s+(.+)/);

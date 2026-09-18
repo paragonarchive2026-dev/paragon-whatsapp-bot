@@ -61,7 +61,7 @@ Paystack costs nothing until a customer pays [3](https://cartmor.com/blog/how-to
 ## 6. Meta setup checklist (all free)
 1. [ ] Meta Developer account + App → add **WhatsApp** product (free, sandbox test number included [3](https://gurusup.com/blog/whatsapp-cloud-api)).
 2. [ ] Business Manager (free) → verify later with CAC docs (needed for production limits + display name).
-3. [ ] Bot phone number: spare/new SIM (~₦500–₦1,000 one-time) — must NOT be on WhatsApp already.
+3. [x] Bot phone number: 0815 Business line (migrates off the app at go-live — $0, no new SIM).
 4. [ ] Permanent token (system user) + Phone Number ID — free.
 5. [ ] Deploy backend to Render free → set Meta webhook to `https://YOUR-APP.onrender.com/webhook`.
 6. [ ] Add free keep-alive pinger hitting `/` every 5–10 min.
@@ -77,7 +77,7 @@ Paystack costs nothing until a customer pays [3](https://cartmor.com/blog/how-to
 | Database | **₦0** (JSON files now; Supabase/Neon free later) | |
 | Product photos | **₦0** (ImgBB/Imgur direct links, no account) [3](https://www.smashingapps.com/7-best-free-image-hosting-and-photo-sharing-websites/) | |
 | Paystack setup + test | **₦0** | Only % on successful sales [3](https://cartmor.com/blog/how-to-accept-paystack-payments-online-store) |
-| New SIM (one-time) | ~₦500–₦1,000 | Only if no spare line |
+| New SIM | ₦0 — cancelled | 0815 becomes the bot; nothing to buy |
 | Proactive templates (optional) | ~$0.0067/utility convo (Nigeria) | Skip until you're selling — reply inside 24h windows = free |
 | **Total to launch** | **≈ ₦0** | |
 

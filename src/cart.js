@@ -160,7 +160,7 @@ async function completeCartOrder(from, session) {
       `📩 *Request ${ref} received!*\n\n${itemsText}\n👤 ${t.name}\n\nWe'll send your exact total + payment link here shortly.\n⚠️ Reminder: payment first — work begins after confirmation, by appointment 📅\n\n${TAGLINE}`
     );
     if (ADMIN()) {
-      await sendText(ADMIN(), `🆕 *CART QUOTE ${ref}*\nFrom: ${from}\n${itemsText}\nName: ${t.name}\nPhone: ${t.phone}\nDetails: ${form.details}\n\nSend total: /quote ${ref} <amount>`);
+      await sendText(ADMIN(), `🆕 *CART QUOTE ${ref}*\nFrom: ${from}\n${itemsText}\nName: ${t.name}\nPhone: ${t.phone}\nDetails: ${form.details}\n\nSend total: /quote ${ref} 15000`);
     }
     return;
   }

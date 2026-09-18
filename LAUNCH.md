@@ -1,27 +1,30 @@
 # 🚀 Paragon Hub — Launch Guide (₦0, click-by-click)
 
 Your bot code is **done and tested**. Launch = steps below, all free.
-Big win: you can **test everything with Meta's sandbox number** — the spare SIM
-can come later. Don't skip Step 0!
+Big win: you can **test everything with Meta's sandbox number** — no spare SIM needed (0815 Business line becomes the bot at go-live). Don't skip Step 0!
 
 **Your pre-filled values (keep handy):**
 
 | Setting | Value |
 |---|---|
 | Shop name | Paragon Hub |
-| Admin number ✅ | 2349063932487 |
+| Admin number ✅ | 2349063932487 (Messenger line — boss side: approvals, /quote, /paid) |
 | Manual account ✅ | OPay 9063932487 - Jibril Abdullahi Onoruoiza |
 | City | Kogi |
 | Verify token | `paragon-verify-2026` |
 | Installments | 50/50 on orders ≥ ₦20,000 (automatic) |
 | Mode | Manual transfers first (no Paystack yet — auto-confirm later) |
 | Project Gmail ✅ | info.paragonhub@gmail.com (master login for GitHub/Render/Supabase) |
-| GitHub ✅ | paragonarchive2026-dev/paragon-whatsapp-bot (public, empty, ready) |
+| GitHub ✅ | paragonarchive2026-dev/paragon-whatsapp-bot (public, 36 files pushed) |
+| Render URL ✅ LIVE | https://whatsapp-bot-1j6f.onrender.com |
+| Meta sandbox ✅ | Test +1-555-163-6741, Phone ID 1254948671045136 (temp token — expires 24h, never stored here) |
+| Business line = FUTURE BOT ✅ | 08154936650 — migrates from Business app to API at go-live (customers keep chatting it, bot answers) |
+| Other line = ADMIN ✅ | 09063932487 — stays human on Messenger; receives approval cards, runs /quote /paid /balance |
 
 ---
 
 ## Step 0 — Confirm your details ✅ DONE (16 Sep)
-- [x] Admin number `09063932487` — confirmed
+- [x] Admin number — `09063932487` (Messenger line; boss side). 0815 Business line becomes the bot at go-live. OPay 9063932487 stays as bank account.
 - [x] OPay `9063932487 - Jibril Abdullahi Onoruoiza` — confirmed
 - [x] City: Kogi
 - [x] Facebook: yes → Meta setup unblocked · Paystack: later (manual mode first)
@@ -118,12 +121,14 @@ From your phone (chatting the sandbox number):
 - [ ] `refer` → your code + share link; `my rewards` → progress
 - [ ] `human` → bot pauses + admin alert → `/resume <number>` → bot back
 
-## Step 7 — Go live (when spare SIM is ready)
-1. Get spare SIM → make sure it is **NOT on WhatsApp** (if it is: back up chats,
-   delete the WhatsApp account on that number — API numbers can't run the app).
-2. Meta Dashboard → **WhatsApp → Phone Numbers → Add phone number** → enter it →
-   verify with SMS/voice OTP → it becomes your production bot number.
-3. Paste it into Render as `BOT_NUMBER` (referral share-links activate) → Save.
+## Step 7 — Go live (migrate 0815 Business line to the bot — $0, no new SIM)
+1. Back up 08154936650's Business chats (if any matter) — this number is LEAVING
+   the app to become the bot (history stays on the phone; customers keep messaging
+   the same number, the bot answers).
+2. Meta Dashboard → **WhatsApp → Phone Numbers → Add phone number** → enter
+   08154936650 → verify with SMS/voice OTP → it becomes the production bot number
+   (removed from the Business app automatically, ~minutes of downtime).
+3. Paste `2348154936650` into Render as `BOT_NUMBER` (referral share-links activate) → Save.
 4. Announce it: put the number on your Instagram/TikTok bio + status:
    *"Chat Paragon Hub on WhatsApp — order in seconds! 🛍️"*
 5. Later (when sales flow): add Paystack live key in Render → auto-confirm turns on.

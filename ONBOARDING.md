@@ -5,7 +5,7 @@ Answer the questions below and send them back in chat (copy-paste is fine).
 building. Batches 2–3 can follow any time.
 
 > 💰 Total cost to launch: **₦0** (see "Free accounts to create" at the bottom).
-> Only exception: a new SIM for the bot (~₦500–₦1,000 one-time, if you don't have a spare line).
+> No exception: the 0815 Business line becomes the bot at go-live — total cost ₦0, no new SIM to buy.
 
 ---
 
@@ -22,7 +22,7 @@ building. Batches 2–3 can follow any time.
 - **Q3 city: Kogi** ✅
 - **Q15 Paystack: NO** → manual transfer mode first, Paystack later (free, 10-min switch)
 - **Q16 Facebook: YES** ✅ → Meta developer setup unblocked
-- Q11 spare SIM/number for bot: coming LATER → plan: test on Meta sandbox first, go live when SIM arrives
+- Q11 bot number: DECIDED ✅ → 0815 Business line migrates to API at go-live (your original vote!); 0906 stays human as admin; test on sandbox first
 - **Native WA catalog + cart: CLARIFIED ✅** → bot receives cart orders + sends storefront button (code ready in `src/cart.js`); Commerce setup = Phase 2 after photos (see `CATALOG.md`)
 - **Payments: MANUAL LOCKED 🔒** → auto-confirm (Paystack/OPay/Flutterwave) parked; transfer + `paid` + `/paid` is the way
 - **Proof galleries: BUILT, needs images** → send 2–4 sample images each for: logos, flyers, websites, boost before/after (ImgBB links or phone pics)
@@ -30,11 +30,11 @@ building. Batches 2–3 can follow any time.
 - **Payment approvals: TAP-TO-APPROVE ✅** → customer sends bank ref → you tap ✅ Approve → customer auto-confirmed; `pending` = live dashboard; cloud backup keeps orders safe (needs 15-min Supabase setup, LAUNCH.md Step 8)
 
 ## ⏳ STILL NEEDED — send these next
-- [ ] Spare SIM for bot number (later — sandbox testing first)
+- [x] Bot number decided: 0815 Business line (migrates at go-live, $0 — no spare SIM)
 - [ ] Proof images (2–4 per category: logos, flyers, websites, boost before/after)
 - [ ] Hosting check: was your old project on Render or Railway? (If Railway, free credit is likely gone → we'll use Render; either way you just log in yourself, no passwords to me)
 - [ ] Meta App status: created / started-but-stuck / not started (LAUNCH.md Step 1)
-- [ ] Number decision: NEW SIM for the bot (recommended) vs moving your current Business number off the app (free API can't keep both — see CAPABILITIES §6)
+- [x] Number decision: 0815 = bot, 0906 = human admin (free API can't keep one number on app + bot — see CAPABILITIES §6)
 - NOT needed: Facebook Page link, WA username, any passwords — the API doesn't use them
 
 ## 🥇 BATCH 1 — must-have (bot can't launch without these)
@@ -87,8 +87,7 @@ Pick one: `Friendly` / `Formal` / `Pidgin mix` / `Your own style (describe it)`
 
 ## 🥈 BATCH 2 — makes the bot much better (send when ready)
 
-**Q11. Do you have a spare SIM / number for the bot?** `Yes / No`
-(It must NOT be a number already on WhatsApp. A new SIM ≈ ₦500–₦1,000.)
+**Q11. Bot number?** ✅ ANSWERED → 0815 Business line migrates from app to API at go-live (customers keep the same number; no new SIM needed).
 
 **Q12. Business hours?**
 Example: `Mon–Sat 9am–7pm. Bot replies 24/7, humans reply in work hours.`
