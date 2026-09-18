@@ -9,7 +9,7 @@ import { startCartCheckout, handleCartStep, sendNativeCatalog } from "./cart.js"
 import { handleProofAction } from "./proof.js";
 import { handleFlowDone, handleIncomingMedia } from "./growth.js";
 import { getOrCreateCode, parseCode, shareLink, recordJoin, recordOrderCredit, peekReward, consumeReward, rewardsSummary, recordAcquisition } from "./rewards.js";
-import { confirmTicketPayment, handleApprove, handleDeclineStart, handleDeclineReason, sendApprovalCard, showPendingDashboard, showTicketAdmin } from "./admin.js";
+import { confirmTicketPayment, handleApprove, handleDeclineStart, handleDeclineReason, sendApprovalCard, showPendingDashboard, showTicketAdmin, showAdminMenu, showAdminMore, pickTicketFor, showPaidConfirm, askQuoteAmount, askPaidAmount, showPausedChats, adminHelp, sendQuoteNow, sendBalanceNow, sendRemindNow, resumeChat, reportPaidResult, depositDue } from "./admin.js";
 
 const SHOP = () => process.env.SHOP_NAME || "our shop";
 const ADMIN = () => process.env.ADMIN_PHONE || "";
@@ -19,9 +19,7 @@ const TAGLINE = "Fast. Creative. Affordable. That's The Paragon Way! 💪🏽";
 const DESIGN_CATS = ["webdesign", "graphics"];
 const PACK_CATS = ["tiktok", "instagram", "youtube", "twitter", "facebook", "telegram", "traffic", "bundles"];
 
-// Installments: orders at/above this split into 50% deposit + 50% before delivery
-const THRESHOLD = () => Number(process.env.INSTALLMENT_THRESHOLD || 20000);
-const depositDue = (total) => (total >= THRESHOLD() ? Math.ceil(total / 2) : total);
+// Installments: depositDue lives in admin.js (shared with the boss console).
 
 // ---- Numbered menus: every option shows "1. ..." and typing the number works ----
 // (unicode-safe slicing: never splits an emoji in half)
@@ -189,7 +187,7 @@ async function handlePaidClaim(from, session, messageId) {
     if (awaiting.length) {
       const t = awaiting[awaiting.length - 1];
       await sendText(from, `Not yet — your price quote for *${t.ref}* (${t.product}) isn't ready 🕐\nWe'll send your exact price + pay steps here the moment it's ready. No need to pay before then 🙏\n\n${TAGLINE}`);
-      if (ADMIN()) await sendText(ADMIN(), `💰 ${from} tried to PAY ${t.ref} but no quote sent yet — send it now: /quote ${t.ref} 15000`);
+      if (ADMIN()) await sendText(ADMIN(), `💰 ${from} tried to PAY ${t.ref} but no quote sent yet — send it now: /quote ${t.ref} 15000 (or *admin* → 💰 Quote)`);
       return;
     }
     if (mine.length) {
@@ -197,7 +195,7 @@ async function handlePaidClaim(from, session, messageId) {
     } else {
       await sendText(from, `Got it — we're verifying your payment now 🔎\nIf you used your order ref as narration, it clears faster.\nYou'll get a confirmation here once it lands ✅\n\n${TAGLINE}`);
     }
-    if (ADMIN()) await sendText(ADMIN(), `🔔 ${from} says they've PAID (no open orders on this number). Verify in bank app, then /paid <ref> [amount].`);
+    if (ADMIN()) await sendText(ADMIN(), `🔔 ${from} says they've PAID (no open orders on this number). Verify in bank app, then /paid <ref> [amount] (or *admin* → Confirm payment).`);
     return;
   }
   if (unpaid.length === 1) {
@@ -546,101 +544,15 @@ export async function handleIncoming(from, msg, messageId) {
   if (ADMIN() && from === ADMIN() && msg.text?.startsWith("/")) {
     const [cmd, target, extra] = msg.text.trim().split(/\s+/);
     if (cmd === "/resume" && target) {
-      paused.delete(target);
-      resetSession(target);
-      await sendText(from, `✅ Bot resumed for ${target}.`);
-      await sendText(target, "You're back with the assistant 🤖. Type *menu* to continue.");
+      await resumeChat(from, target);
       return;
     }
     if (cmd === "/quote" && target) {
-      const amount = cleanAmount(extra);
-      const ticket = getTicketByRef(String(target).toUpperCase());
-      if (!ticket) {
-        await sendText(from, `❌ No ticket ${target}.`);
-        return;
-      }
-      if (!amount || amount < 100) {
-        await sendText(from, "❌ Bad amount. Usage: /quote SHOP-XXX 45000");
-        return;
-      }
-      // Referral rewards auto-apply on quotes too — owner quotes the real price,
-      // bot silently deducts, everyone is told.
-      let final = amount;
-      let rewardNote = "";
-      const reward = peekReward(ticket.customer, ticket.productId, amount);
-      if (reward) {
-        final = Math.max(0, amount - reward.discount);
-        consumeReward(ticket.customer, reward.type);
-        rewardNote = `\n🎁 ${reward.label} auto-applied: *-${formatPrice(reward.discount)}*`;
-      }
-      const due = depositDue(final);
-      const split = due < final;
-      updateTicket(ticket.ref, { total: final, status: "quoted", paidSoFar: 0, dueNow: final, rewardApplied: reward ? reward.type : null });
-      const note =
-        `💰 *Quote for ${ticket.ref}*\n\n🧾 ${ticket.product}` +
-        `\n💰 Total: *${formatPrice(final)}*` +
-        rewardNote +
-        (split ? `\n\n💳 *Installments:* pay *50% deposit (${formatPrice(due)})* to start — balance *${formatPrice(final - due)}* before delivery.` : "") +
-        `\n\n⚠️ Payment first — work begins once confirmed, by appointment 📅`;
-      if (paymentsEnabled()) {
-        try {
-          const link = await createPaymentLink({
-            email: `${ticket.customer}@whatsapp.shop`,
-            amountKobo: Math.round(due * 100),
-            reference: ticket.ref,
-            metadata: { phone: ticket.customer, product: ticket.product },
-          });
-          await sendText(ticket.customer, note);
-          await sendUrlButton(ticket.customer, `Pay *${formatPrice(due)}* now with card, transfer or USSD 👇\n\n${TAGLINE}`, "Pay Now", link.authorization_url, { footer: `Ref: ${ticket.ref}` });
-          await sendText(from, `✅ Quote ${formatPrice(final)} + payment link (${formatPrice(due)} now) sent to ${ticket.customer}.${reward ? ` (🎁 ${reward.type} auto-applied)` : ""}`);
-        } catch (e) {
-          await sendText(from, "❌ Paystack error: " + e.message);
-        }
-      } else {
-        const acct = process.env.SHOP_ACCOUNT_DETAILS || "(set SHOP_ACCOUNT_DETAILS in env)";
-        await sendText(ticket.customer, note + `\n\n💳 Transfer *${formatPrice(due)}* (exact) to:\n${acct}\nNarration: *${ticket.ref}*\nThen reply *paid* ✅\n\n${TAGLINE}`);
-        await sendText(from, `✅ Quote sent (manual mode) to ${ticket.customer}.${reward ? ` (🎁 ${reward.type} auto-applied)` : ""}`);
-      }
+      await sendQuoteNow(from, target, cleanAmount(extra));
       return;
     }
     if (cmd === "/balance" && target) {
-      const ticket = getTicketByRef(String(target).toUpperCase());
-      if (!ticket) {
-        await sendText(from, `❌ No ticket ${target}.`);
-        return;
-      }
-      const total = ticket.total || 0;
-      if (!total) {
-        await sendText(from, "❌ No total on this ticket — use /quote first.");
-        return;
-      }
-      const bal = total - (ticket.paidSoFar || 0);
-      if (bal <= 0) {
-        await sendText(from, `✅ ${ticket.ref} is already fully paid.`);
-        return;
-      }
-      updateTicket(ticket.ref, { dueNow: bal });
-      if (paymentsEnabled()) {
-        try {
-          const bRef = `${ticket.ref}-BAL`;
-          updateTicket(ticket.ref, { balanceRef: bRef });
-          const link = await createPaymentLink({
-            email: `${ticket.customer}@whatsapp.shop`,
-            amountKobo: Math.round(bal * 100),
-            reference: bRef,
-            metadata: { phone: ticket.customer, product: ticket.product, kind: "balance" },
-          });
-          await sendText(ticket.customer, `💰 *Balance due for ${ticket.ref}*\n\nPaid so far: ${formatPrice(total - bal)}\nBalance: *${formatPrice(bal)}*\n\nPay to unlock delivery ✅`);
-          await sendUrlButton(ticket.customer, `Pay balance *${formatPrice(bal)}* 👇\n\n${TAGLINE}`, "Pay Balance", link.authorization_url, { footer: `Ref: ${bRef}` });
-          await sendText(from, `✅ Balance link (${formatPrice(bal)}) sent to ${ticket.customer}.`);
-        } catch (e) {
-          await sendText(from, "❌ Paystack error: " + e.message);
-        }
-      } else {
-        const acct = process.env.SHOP_ACCOUNT_DETAILS || "(set SHOP_ACCOUNT_DETAILS in env)";
-        await sendText(ticket.customer, `💰 *Balance due for ${ticket.ref}*\n\nPaid so far: ${formatPrice(total - bal)}\nTransfer balance *${formatPrice(bal)}* (exact) to:\n${acct}\nNarration: *${ticket.ref}*\nThen reply *paid* ✅\n\n${TAGLINE}`);
-        await sendText(from, `✅ Balance request sent (manual). Confirm with: /paid ${ticket.ref} ${bal}`);
-      }
+      await sendBalanceNow(from, target);
       return;
     }
     if (cmd === "/paid" && target) {
@@ -659,43 +571,14 @@ export async function handleIncoming(from, msg, messageId) {
         await sendText(from, "❌ Specify amount: /paid SHOP-XXX 15000");
         return;
       }
-      const res = await confirmTicketPayment(ticket.ref, amt, "manual");
-      if (!res.ok) {
-        await sendText(from, `❌ Couldn't confirm ${ticket.ref} (${res.reason || "error"}).`);
-        return;
-      }
-      if (res.already) {
-        await sendText(from, `ℹ️ ${ticket.ref} is already paid ✅`);
-        return;
-      }
-      await sendText(from, res.fully
-        ? `✅ ${ticket.ref} marked PAID IN FULL (${formatPrice(res.newPaid)}), customer notified.`
-        : `✅ ${ticket.ref}: ${formatPrice(amt)} recorded (total paid ${formatPrice(res.newPaid)}${total ? ` of ${formatPrice(total)}` : ""}). Customer notified.`);
+      await reportPaidResult(from, ticket, amt);
       return;
     }
     if (cmd === "/remind" && target) {
-      const ticket = getTicketByRef(String(target).toUpperCase());
-      if (!ticket) {
-        await sendText(from, `❌ No ticket ${target}.`);
-        return;
-      }
-      const tpl = process.env.TEMPLATE_REMINDER;
-      if (!tpl) {
-        await sendText(from, "❌ Set TEMPLATE_REMINDER in .env to an approved Utility template first (see TEMPLATES.md).");
-        return;
-      }
-      const due = ticket.dueNow ?? ticket.total ?? 0;
-      try {
-        await sendTemplate(ticket.customer, tpl, "en", [
-          { type: "body", parameters: [{ type: "text", text: ticket.name || "there" }, { type: "text", text: ticket.ref }, { type: "text", text: formatPrice(due) }] },
-        ]);
-        await sendText(from, `✅ Reminder sent to ${ticket.customer} for ${ticket.ref}.`);
-      } catch (e) {
-        await sendText(from, "❌ Template send failed: " + (e.response?.data?.error?.message || e.message));
-      }
+      await sendRemindNow(from, target);
       return;
     }
-    await sendText(from, "Admin commands:\n/resume <number> — hand chat back to bot\n/quote <ref> <amount> — send exact quote + payment link\n/paid <ref> [amount] — confirm a manual payment\n/balance <ref> — send balance payment link\n/remind <ref> — resend payment reminder (needs approved template)\n(or tap ✅ Approve on payment cards / type *pending* for the dashboard)");
+    await sendText(from, "Admin commands:\n/resume <number> — hand chat back to bot\n/quote <ref> <amount> — send exact quote + payment link\n/paid <ref> [amount] — confirm a manual payment\n/balance <ref> — send balance payment link\n/remind <ref> — resend payment reminder (needs approved template)\n(or tap ✅ Approve on payment cards / type *pending* — or send *admin* for the 👑 button menu)");
     return;
   }
 
@@ -713,7 +596,7 @@ export async function handleIncoming(from, msg, messageId) {
       const preview = msg.type === "order"
         ? `🛒 CART sent (${msg.order?.product_items?.length || 0} items)`
         : (msg.text || msg.buttonId || msg.listId || "(media)");
-      await sendText(ADMIN(), `💬 *Customer ${from}* (bot paused):\n${preview}\n\nReply them from this bot number's inbox, or /resume ${from} to hand back to bot.`);
+      await sendText(ADMIN(), `💬 *Customer ${from}* (bot paused):\n${preview}\n\nReply them from this bot number's inbox, or /resume ${from} (or *admin* → Paused chats) to hand back to bot.`);
     }
     return;
   }
@@ -722,6 +605,7 @@ export async function handleIncoming(from, msg, messageId) {
   const text = (msg.text || "").trim();
   const lower = text.toLowerCase();
   let actionId = msg.buttonId || msg.listId || "";
+  const adminOK = ADMIN() && from === ADMIN();
 
   // Ads first-touch attribution (stored silently, never blocks chat)
   if (msg.referral) recordAcquisition(from, msg.referral);
@@ -755,7 +639,8 @@ export async function handleIncoming(from, msg, messageId) {
   // ---- Cancel / menu escape during any form ----
   if (session.step !== "idle" && (lower === "cancel" || lower === "menu")) {
     resetSession(from);
-    await showMenu(from, session);
+    if (adminOK) await showAdminMenu(from, session);
+    else await showMenu(from, session);
     return;
   }
 
@@ -803,6 +688,38 @@ export async function handleIncoming(from, msg, messageId) {
       return;
     }
     await handleDeclineReason(from, session, text);
+    return;
+  }
+
+  // ---- Boss guided flows: amounts typed after tapping a ticket ----
+  if (session.step === "admin_quote_amount") {
+    if (!adminOK) { resetSession(from); return; }
+    const amount = cleanAmount(text);
+    if (!amount || amount < 100) {
+      await sendText(from, "Send the quote as digits (e.g. 15000) — no letters. Or *cancel*.");
+      return;
+    }
+    const ref = session.form?.ref;
+    resetSession(from);
+    await sendQuoteNow(from, ref, amount);
+    return;
+  }
+  if (session.step === "admin_paid_amount") {
+    if (!adminOK) { resetSession(from); return; }
+    const amount = cleanAmount(text);
+    const ref = session.form?.ref;
+    const ticket = ref && getTicketByRef(String(ref).toUpperCase());
+    if (!ticket) {
+      resetSession(from);
+      await sendText(from, `❌ No ticket ${ref}.`);
+      return;
+    }
+    if (!amount || amount <= 0) {
+      await sendText(from, "Send the confirmed amount as digits (e.g. 15000). Or *cancel*.");
+      return;
+    }
+    resetSession(from);
+    await reportPaidResult(from, ticket, amount);
     return;
   }
 
@@ -866,7 +783,7 @@ export async function handleIncoming(from, msg, messageId) {
         `📩 *Request ${ref} received!*\n\n🧾 ${t.product}\n💰 Usual range: *${formatPrice(t.priceMin)} – ${formatPrice(t.priceMax)}*\n👤 ${t.name}\n📝 ${t.details}\n\nWe'll send your exact price + payment link here shortly.\n⚠️ Reminder: payment first — work begins after confirmation, by appointment 📅\n\n${TAGLINE}`
       );
       if (ADMIN()) {
-        await sendText(ADMIN(), `🆕 *QUOTE REQUEST ${ref}*\nFrom: ${from}\nService: ${t.product}\nName: ${t.name}\nPhone: ${t.phone}\nBrief: ${t.details}\n\nSend quote: /quote ${ref} 15000`);
+        await sendText(ADMIN(), `🆕 *QUOTE REQUEST ${ref}*\nFrom: ${from}\nService: ${t.product}\nName: ${t.name}\nPhone: ${t.phone}\nBrief: ${t.details}\n\nSend quote: /quote ${ref} 15000 (or *admin* → 💰 Quote)`);
       }
       setMenu(session, ["menu", "human"]);
       await sendButtons(from, "We'll be in touch 👇", [
@@ -1071,6 +988,67 @@ export async function handleIncoming(from, msg, messageId) {
     }
     return;
   }
+  // ---- Boss console actions (admin-only; strangers get stopped, never data) ----
+  if (actionId === "adminmenu") {
+    if (adminOK) await showAdminMenu(from, session);
+    else await showMenu(from, session);
+    return;
+  }
+  if (actionId === "custmenu") {
+    await showMenu(from, session);
+    return;
+  }
+  if (actionId === "adminmore" || actionId === "ahelp") {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    if (actionId === "adminmore") await showAdminMore(from, session);
+    else await adminHelp(from, session);
+    return;
+  }
+  if (actionId === "aquote_pick" || actionId === "apaid_pick" || actionId === "abal_pick" || actionId === "aremind_pick") {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await pickTicketFor(from, { aquote_pick: "quote", apaid_pick: "paid", abal_pick: "balance", aremind_pick: "remind" }[actionId], session);
+    return;
+  }
+  if (actionId.startsWith("aquote_")) {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await askQuoteAmount(from, actionId.replace("aquote_", ""), session);
+    return;
+  }
+  if (actionId.startsWith("apaidgo_")) {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await handleApprove(from, actionId.replace("apaidgo_", ""), messageId);
+    return;
+  }
+  if (actionId.startsWith("apaidamt_")) {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await askPaidAmount(from, actionId.replace("apaidamt_", ""), session);
+    return;
+  }
+  if (actionId.startsWith("apaid_")) {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await showPaidConfirm(from, actionId.replace("apaid_", ""), session);
+    return;
+  }
+  if (actionId.startsWith("abal_")) {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await sendBalanceNow(from, actionId.replace("abal_", ""));
+    return;
+  }
+  if (actionId.startsWith("aremind_")) {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await sendRemindNow(from, actionId.replace("aremind_", ""));
+    return;
+  }
+  if (actionId === "aresume_list") {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await showPausedChats(from, session);
+    return;
+  }
+  if (actionId.startsWith("aresume_")) {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await resumeChat(from, actionId.replace("aresume_", ""));
+    return;
+  }
   if (actionId.startsWith("cats_more_")) {
     await showCategories(from, parseInt(actionId.replace("cats_more_", ""), 10) || 0, session);
     return;
@@ -1127,7 +1105,7 @@ export async function handleIncoming(from, msg, messageId) {
     case "human":
       paused.add(from);
       await sendText(from, `Connecting you to a human 🧑‍💼\nPlease describe what you need — someone will reply shortly. (The bot is paused for this chat.)\n\n${TAGLINE}`);
-      if (ADMIN()) await sendText(ADMIN(), `🙋 *Handover request* from ${from}. Chat paused. Reply them, then /resume ${from}.`);
+      if (ADMIN()) await sendText(ADMIN(), `🙋 *Handover request* from ${from}. Chat paused. Reply them, then /resume ${from} (or *admin* → Paused chats).`);
       return;
     case "complain":
       await startComplaint(from, session);
@@ -1160,7 +1138,8 @@ export async function handleIncoming(from, msg, messageId) {
 
   // ---- Keyword routing (plain text) ----
   if (!text) {
-    await showMenu(from, session);
+    if (adminOK) await showAdminMenu(from, session);
+    else await showMenu(from, session);
     return;
   }
   // Referral code via wa.me prefill or typed — checked BEFORE greeting,
@@ -1185,7 +1164,14 @@ export async function handleIncoming(from, msg, messageId) {
       // unknown code → fall through to normal routing (never dead-end)
     }
   }
-  if (/^(hi|hello|hey|start|menu|cancel)/i.test(lower)) return showMenu(from, session);
+  if (/^(hi|hello|hey|start|menu|cancel)/i.test(lower)) {
+    if (adminOK) { await showAdminMenu(from, session); return; }
+    return showMenu(from, session);
+  }
+  // Boss console trigger (admin only; anyone else falls through silently)
+  if (!actionId && session.step === "idle" && /^(admin|boss|console)$/.test(lower)) {
+    if (adminOK) { await showAdminMenu(from, session); return; }
+  }
   {
     // "find X" / "search X" → instant search
     const m = lower.match(/^(find|search)\s+(.+)/);
@@ -1240,7 +1226,7 @@ export async function handleIncoming(from, msg, messageId) {
   if (/human|agent|talk.*person|call me/.test(lower)) {
     paused.add(from);
     await sendText(from, `Connecting you to a human 🧑‍💼\nPlease describe what you need — someone will reply shortly.\n\n${TAGLINE}`);
-    if (ADMIN()) await sendText(ADMIN(), `🙋 *Handover request* from ${from}: "${text}". Chat paused.`);
+    if (ADMIN()) await sendText(ADMIN(), `🙋 *Handover request* from ${from}: "${text}". Chat paused — reply them, then /resume ${from} (or *admin* → Paused chats).`);
     return;
   }
   if (/proof(?!\s+of\s+payment)|sample|example|portfolio|past work|previous work|see.*work|show.*work/.test(lower)) {
@@ -1296,6 +1282,7 @@ export async function handleIncoming(from, msg, messageId) {
   }
 
   // ---- Fallback ----
+  if (adminOK) { await showAdminMenu(from, session); return; }
   setMenu(session, ["shop", "track", "faqs"]);
   await sendButtons(
     from,
