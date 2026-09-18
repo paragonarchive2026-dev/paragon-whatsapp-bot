@@ -32,6 +32,11 @@ function etaFor(ticket = {}) {
 }
 
 const isAdmin = (from) => ADMIN() && from === ADMIN();
+/** Manual-pay account line — never show "ask admin" to a customer. */
+function shopAccount() {
+  return process.env.SHOP_ACCOUNT_DETAILS
+    || "OPay 9063932487 — Jibril Abdullahi Onoruoiza\n(Use your order ref as narration)";
+}
 
 const uslice = (s, n) => [...String(s || "")].slice(0, n).join("");
 const num = (i, title, max = 24) => `${i + 1}. ${uslice(title, max - `${i + 1}. `.length)}`;
@@ -194,6 +199,7 @@ export async function sendApprovalCard(adminPhone, ticket) {
       `\n💰 Total: ${total ? formatPrice(total) : "—"} • Due now: ${due ? formatPrice(due) : "—"}` +
       `\n🏦 Customer's bank ref: *${ticket.bankRef || "— (skipped)"}*` +
       `\n📌 Status: ${ticket.status}` +
+      `\n⏱️ ETA once paid: ${etaFor(ticket)}` +
       `\n\nTap to decide 👇 (wrong amount? 👑 menu → Confirm payment → ✏️ Amount)`
   );
   await sendButtons(adminPhone, `Approve *${ticket.ref}*?`, [
@@ -207,21 +213,24 @@ export async function sendApprovalCard(adminPhone, ticket) {
 export async function showPendingDashboard(to, session = null) {
   const open = getAllTickets().filter((t) => t.ref && OPEN.includes(t.status));
   if (!open.length) {
+    if (session) session.menu = ["adminmenu"];
     await sendText(to, `🎉 Nothing pending — all clear!\n\n${TAGLINE}`);
+    await sendButtons(to, "Back 👇", [{ id: "adminmenu", title: "1. 👑 Boss Menu" }]);
     return;
   }
   const list = open.slice(-8).reverse();
   const dueTotal = open.reduce((s, t) => s + (t.dueNow ?? t.total ?? 0), 0);
-  if (session) session.menu = list.map((t) => `adminview_${t.ref}`);
-  await sendList(to, `📊 *Pending approvals* (${open.length} open • ${formatPrice(dueTotal)} due)\nTap an order to review + approve 👇`, "View pending", [
+  if (session) session.menu = [...list.map((t) => `adminview_${t.ref}`), "adminmenu"];
+  await sendList(to, `📊 *Pending* (${open.length} open • ${formatPrice(dueTotal)} due)\nTap an order 👇`, "View pending", [
     {
       title: "Open orders",
       rows: list.map((t, i) => ({
         id: `adminview_${t.ref}`,
         title: num(i, t.ref),
-        description: `${t.product || ""} • ${t.total ? formatPrice(t.total) : "quote"} • ${t.status}`.slice(0, 72),
+        description: uslice(`${t.product || ""} • ${t.total ? formatPrice(t.total) : "quote"} • ${t.status}`, 72),
       })),
     },
+    { title: "More", rows: [{ id: "adminmenu", title: num(list.length, "👑 Boss menu") }] },
   ]);
 }
 
@@ -232,23 +241,61 @@ export async function showTicketAdmin(to, ref, session = null) {
     await sendText(to, `❌ No ticket ${ref}.`);
     return;
   }
+  const st = t.status || "";
   await sendText(
     to,
-    `🧾 *${t.ref}* (${t.status})` +
+    `🧾 *${t.ref}* (${st})` +
       `\nService: ${t.product || "—"}${t.qty > 1 ? ` x${t.qty}` : ""}` +
       `\nCustomer: ${t.name || "?"} • ${t.customer}` +
       (t.phone ? `\nPhone: ${t.phone}` : "") +
       `\nTotal: ${t.total ? formatPrice(t.total) : "—"} • Paid: ${formatPrice(t.paidSoFar || 0)} • Due: ${formatPrice(t.dueNow ?? t.total ?? 0)}` +
       `\nBank ref: ${t.bankRef || "—"}` +
       (t.rewardApplied ? `\nReward: ${t.rewardApplied}` : "") +
+      `\n⏱️ ETA: ${etaFor(t)}` +
       `\nDetails: ${uslice(t.details || "—", 300)}`
   );
-  if (session) session.menu = [`approve_${t.ref}`, `decline_${t.ref}`, "pending"];
-  await sendButtons(to, "Decide 👇", [
-    { id: `approve_${t.ref}`, title: "✅ Approve" },
-    { id: `decline_${t.ref}`, title: "❌ Decline" },
-    { id: "pending", title: "📋 Pending" },
-  ]);
+  // Context-aware actions — only show what actually applies (less boss mistakes)
+  let btns;
+  if (st === "awaiting_quote") {
+    btns = [
+      { id: `aquote_${t.ref}`, title: "1. 💰 Send quote" },
+      { id: `acancel_${t.ref}`, title: "2. 🚫 Cancel" },
+      { id: "pending", title: "3. 📋 Pending" },
+    ];
+  } else if (["new_order", "quoted", "deposit_paid"].includes(st)) {
+    btns = [
+      { id: `approve_${t.ref}`, title: "1. ✅ Approve pay" },
+      { id: `decline_${t.ref}`, title: "2. ❌ Decline" },
+      { id: st === "deposit_paid" ? `abal_${t.ref}` : `acancel_${t.ref}`, title: st === "deposit_paid" ? "3. 💳 Balance" : "3. 🚫 Cancel" },
+    ];
+  } else if (st === "paid") {
+    btns = [
+      { id: `adeliver_${t.ref}`, title: "1. 🎉 Delivered" },
+      { id: `areply_${t.customer}`, title: "2. 💬 Message" },
+      { id: "pending", title: "3. 📋 Pending" },
+    ];
+  } else if (st === "delivered") {
+    btns = [
+      { id: `areply_${t.customer}`, title: "1. 💬 Message" },
+      { id: "pending", title: "2. 📋 Pending" },
+      { id: "adminmenu", title: "3. 👑 Boss menu" },
+    ];
+  } else if (st === "cancelled") {
+    btns = [
+      { id: `areply_${t.customer}`, title: "1. 💬 Message" },
+      { id: "pending", title: "2. 📋 Pending" },
+      { id: "adminmenu", title: "3. 👑 Boss menu" },
+    ];
+  } else {
+    // open complaint/feedback etc.
+    btns = [
+      { id: `areply_${t.customer}`, title: "1. 💬 Reply" },
+      { id: "pending", title: "2. 📋 Pending" },
+      { id: "adminmenu", title: "3. 👑 Boss menu" },
+    ];
+  }
+  if (session) session.menu = btns.map((b) => b.id);
+  await sendButtons(to, "Next action 👇", btns);
 }
 
 // Installments: orders at/above this split into 50% deposit + 50% before delivery
@@ -262,7 +309,11 @@ export async function resumeChat(adminFrom, target) {
   paused.delete(target);
   resetSession(target);
   await sendText(from, `✅ Bot resumed for ${target}.`);
-  await sendText(target, "✅ You're back with the assistant 🤖 (the human left the chat). Type *menu* to continue, or *track* to check your order.");
+  await sendText(target, `✅ You're back with the assistant 🤖\nThe human left the chat — pick what you need 👇\n\n${TAGLINE}`);
+  await custNext(target, [
+    { id: "menu", title: "1. Main Menu" },
+    { id: "track", title: "2. Track Order" },
+  ]);
 }
 
 export async function sendQuoteNow(adminFrom, target, amount) {
@@ -288,7 +339,17 @@ export async function sendQuoteNow(adminFrom, target, amount) {
   }
   const due = depositDue(final);
   const split = due < final;
-  updateTicket(ticket.ref, { total: final, status: "quoted", paidSoFar: 0, dueNow: final, rewardApplied: reward ? reward.type : null });
+  updateTicket(ticket.ref, { total: final, status: final <= 0 ? "paid" : "quoted", paidSoFar: 0, dueNow: final <= 0 ? 0 : due, rewardApplied: reward ? reward.type : null });
+
+  // Free after reward: auto-confirm, no payment step
+  if (final <= 0) {
+    await recordOrderCredit(ticket.customer);
+    await sendText(ticket.customer, `🎉 *${ticket.ref} — FREE with your reward!*\n\n🧾 ${ticket.product}\n💰 Total: *₦0*${rewardNote}\n\nNo payment needed — work is scheduled 🛠️\n⏱️ ETA: *${etaFor(ticket)}*\n\n${TAGLINE}`);
+    await custNext(ticket.customer, TRACK_MENU);
+    await sendText(from, `🎁 Quote ${ticket.ref} covered by reward (₦0) — customer notified, fulfill like paid.`);
+    return;
+  }
+
   const note =
     `💰 *Quote for ${ticket.ref}*\n\n🧾 ${ticket.product}` +
     `\n💰 Total: *${formatPrice(final)}*` +
@@ -311,7 +372,7 @@ export async function sendQuoteNow(adminFrom, target, amount) {
       await sendText(from, "❌ Paystack error: " + e.message);
     }
   } else {
-    const acct = process.env.SHOP_ACCOUNT_DETAILS || "(set SHOP_ACCOUNT_DETAILS in env)";
+    const acct = shopAccount();
     await sendText(ticket.customer, note + `\n\n💳 Transfer *${formatPrice(due)}* (exact) to:\n${acct}\nNarration: *${ticket.ref}*\nThen reply *paid* ✅\n\n${TAGLINE}`);
     await custNext(ticket.customer, TRACK_MENU);
     await sendText(from, `✅ Quote sent (manual mode) to ${ticket.customer}.${reward ? ` (🎁 ${reward.type} auto-applied)` : ""}`);
@@ -354,7 +415,7 @@ export async function sendBalanceNow(adminFrom, target) {
       await sendText(from, "❌ Paystack error: " + e.message);
     }
   } else {
-    const acct = process.env.SHOP_ACCOUNT_DETAILS || "(set SHOP_ACCOUNT_DETAILS in env)";
+    const acct = shopAccount();
     await sendText(ticket.customer, `💰 *Balance due for ${ticket.ref}*\n\nPaid so far: ${formatPrice(total - bal)}\nTransfer balance *${formatPrice(bal)}* (exact) to:\n${acct}\nNarration: *${ticket.ref}*\nThen reply *paid* ✅\n\n${TAGLINE}`);
     await custNext(ticket.customer, TRACK_MENU);
     await sendText(from, `✅ Balance request sent (manual). Confirm with: /paid ${ticket.ref} ${bal}`);
@@ -538,7 +599,7 @@ export async function showPausedChats(to, session = null) {
 /** One-screen boss guide. Admin-only (guarded by caller). */
 export async function adminHelp(to, session = null) {
   if (session) session.menu = ["adminmenu"];
-  await sendText(to, "👑 *Boss quick guide*\n• Send *admin* anytime = this button menu\n• *pending* = orders needing approval\n• Tap ✅ Approve on payment cards\n• Typing still works: /quote /paid /balance /remind /resume /deliver /cancel");
+  await sendText(to, "👑 *Boss quick guide*\n\n*Buttons (easiest)*\n• *admin* → 👑 console\n• *pending* → open orders\n• Paste any SHOP-XXX → full ticket card\n• Payment cards: ✅ Approve / ❌ Decline\n\n*Typing shortcuts*\n/quote SHOP-XXX 15000\n/paid SHOP-XXX [amount]\n/balance SHOP-XXX\n/remind SHOP-XXX\n/deliver SHOP-XXX\n/cancel SHOP-XXX\n/resume 2348…\n\n*Flow tip*\nQuote requests → 💰 Quote\nPaid jobs → Mark delivered 🎉\nReferral overview → Referral stats");
   await sendButtons(to, "Back 👇", [{ id: "adminmenu", title: "1. 👑 Boss Menu" }]);
 }
 
@@ -557,15 +618,21 @@ export async function notifyHandover(to, custPhone, headline, preview) {
 /** Enter reply mode: boss texts go straight to the customer until done/cancel. */
 export async function enterReplyMode(to, phone, session) {
   const p = String(phone || "").trim();
-  if (!p || !paused.has(p)) {
+  if (!p) {
     if (session) session.menu = ["adminmenu"];
-    await sendText(to, `That chat isn't paused — the bot is already handling ${p || "them"} 🤖`);
+    await sendText(to, "Missing customer number.");
     await sendButtons(to, "Back 👇", [{ id: "adminmenu", title: "1. 👑 Boss Menu" }]);
     return;
   }
+  // Boss can message from a ticket card even if the customer never asked for a human —
+  // auto-pause so the bot doesn't double-talk while the boss is typing.
+  if (!paused.has(p)) {
+    paused.add(p);
+    await sendText(to, `⏸️ Bot paused for *${p}* so you can talk.`);
+  }
   session.step = "admin_reply";
   session.form = { phone: p };
-  await sendText(to, `💬 Replying to *${p}* — everything you type now goes straight to them.\nSend *done* when finished (or *cancel*).`);
+  await sendText(to, `💬 Replying to *${p}* — everything you type now goes straight to them.\nSend *done* when finished (hands chat back to bot), or *cancel*.`);
 }
 
 /** Paused-chat action card: reply, resume, or back. Admin-only (guarded by caller). */

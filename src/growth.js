@@ -17,6 +17,10 @@ import { sendApprovalCard } from "./admin.js";
 const SHOP = () => process.env.SHOP_NAME || "our shop";
 const ADMIN = () => process.env.ADMIN_PHONE || "";
 const TAGLINE = "Fast. Creative. Affordable. That's The Paragon Way! 💪🏽";
+function shopAccount() {
+  return process.env.SHOP_ACCOUNT_DETAILS
+    || "OPay 9063932487 — Jibril Abdullahi Onoruoiza\n(Use your order ref as narration)";
+}
 
 function etaFor(ticket = {}) {
   const s = `${ticket.product || ""} ${ticket.productId || ""}`.toLowerCase();
@@ -150,6 +154,15 @@ export async function handleFlowDone(from, msg) {
       `📩 *Request ${ref} received!*\n\n🧾 ${t.product}\n💰 Usual range: *${formatPrice(p.priceMin)} – ${formatPrice(p.priceMax)}*\n👤 ${t.name}\n\nWe'll send your exact price + payment steps here shortly.\n⚠️ Reminder: payment first — work begins after confirmation, by appointment 📅\n\n${TAGLINE}`
     );
     if (ADMIN()) await sendText(ADMIN(), `🆕 *FLOW QUOTE ${ref}*\nFrom: ${from}\nService: ${t.product}\nName: ${t.name}\nPhone: ${t.phone}\nDetails: ${t.details}\n\nSend quote: /quote ${ref} 15000`);
+    {
+      const session = getSession(from);
+      if (session) session.menu = ["track", "menu", "human"];
+      await sendButtons(from, "We'll be in touch 👇", [
+        { id: "track", title: "1. Track Order" },
+        { id: "menu", title: "2. Main Menu" },
+        { id: "human", title: "3. Talk to Human" },
+      ]);
+    }
     return;
   }
 
@@ -211,7 +224,7 @@ export async function handleFlowDone(from, msg) {
       await sendText(from, summary + `\n\n⚠️ Online payment is down right now — we'll message you payment details shortly. Your ref is *${ref}*.\n\n${TAGLINE}`);
     }
   } else {
-    const acct = process.env.SHOP_ACCOUNT_DETAILS || "our account details (ask admin to set SHOP_ACCOUNT_DETAILS)";
+    const acct = shopAccount();
     await sendText(
       from,
       summary + `\n\n💳 *How to pay:*\nTransfer *${formatPrice(due)}*${split ? " deposit" : ""} (exact amount) to:\n${acct}\nUse *${ref}* as narration/description.\nThen reply *paid* here — we'll verify and start your job ✅\n\n${TAGLINE}`
@@ -221,9 +234,10 @@ export async function handleFlowDone(from, msg) {
     await sendText(ADMIN(), `🆕 *FLOW ORDER ${ref}*\nFrom: ${from}\nService: ${t.product} (${t.productId})${t.qty > 1 ? ` x${t.qty}` : ""}\nTotal: ${formatPrice(total)}${reward ? ` (🎁 ${reward.type} -${formatPrice(reward.discount)})` : ""}${split ? ` (deposit ${formatPrice(due)} now)` : ""}\nName: ${t.name}\nPhone: ${t.phone}\nDetails: ${t.details}\nPayment: ${paymentsEnabled() ? "Paystack link sent" : "manual transfer"}`);
   }
   const session = getSession(from);
-  if (session) session.menu = ["track", "menu"];
-  await sendButtons(from, "Track it anytime 👇", [
-    { id: "track", title: "1. Track Order" },
-    { id: "menu", title: "2. Main Menu" },
+  if (session) session.menu = ["paid_claim", "track", "menu"];
+  await sendButtons(from, "After you pay 👇", [
+    { id: "paid_claim", title: "1. ✅ I paid" },
+    { id: "track", title: "2. Track Order" },
+    { id: "menu", title: "3. Main Menu" },
   ]);
 }

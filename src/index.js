@@ -53,7 +53,7 @@ app.post("/webhooks/paystack", express.raw({ type: "application/json" }), async 
     const expectedKobo = Math.round(Number(dueNow) * 100);
     if (check.data.amount !== expectedKobo) {
       console.error(`Amount mismatch on ${reference}: expected ${expectedKobo}, got ${check.data.amount}`);
-      if (ADMIN) await sendText(ADMIN(), `⚠️ *Amount mismatch* on ${reference}: expected ₦${Number(dueNow).toLocaleString()}, paid ₦${(check.data.amount / 100).toLocaleString()}. Check before fulfilling.`);
+      if (ADMIN) await sendText(ADMIN, `⚠️ *Amount mismatch* on ${reference}: expected ₦${Number(dueNow).toLocaleString()}, paid ₦${(check.data.amount / 100).toLocaleString()}. Check before fulfilling.`);
       return;
     }
 
@@ -78,7 +78,7 @@ app.post("/webhooks/paystack", express.raw({ type: "application/json" }), async 
         `✅ *Payment confirmed!* Thank you so much! 🙏🏽\n\n🧾 Order *${ticket.ref}*\n💰 ${money(paidSoFar)} received in full via ${channel || "Paystack"}\n\nYour order is now being processed 🛠️\nWe'll notify you here once it's done!\n\n${TAG}`
       );
       if (ADMIN) {
-        await sendText(ADMIN(), `💰 *PAID IN FULL ${ticket.ref}*\nService: ${ticket.product}${ticket.qty > 1 ? ` x${ticket.qty}` : ""}\nTotal: ${money(total)}\nCustomer: ${ticket.name} (${ticket.customer})\nDetails: ${ticket.details || ""}\nChannel: ${channel}`);
+        await sendText(ADMIN, `💰 *PAID IN FULL ${ticket.ref}*\nService: ${ticket.product}${ticket.qty > 1 ? ` x${ticket.qty}` : ""}\nTotal: ${money(total)}\nCustomer: ${ticket.name} (${ticket.customer})\nDetails: ${ticket.details || ""}\nChannel: ${channel}`);
       }
       console.log("✅ Payment matched + confirmed in full:", reference);
     } else {
@@ -87,8 +87,8 @@ app.post("/webhooks/paystack", express.raw({ type: "application/json" }), async 
         ticket.customer,
         `✅ *Deposit confirmed!* Thank you! 🙏🏽\n\n🧾 Order *${ticket.ref}*\n💰 ${money(paidNow)} received (${money(paidSoFar)} of ${money(total)})\n\nWork is scheduled 🛠️\nBalance *${money(bal)}* due before delivery.\n\n${TAG}`
       );
-      if (ADMIN()) {
-        await sendText(ADMIN(), `💰 *DEPOSIT ${ticket.ref}* — ${money(paidNow)} (${money(paidSoFar)} of ${money(total)})\nCustomer: ${ticket.name} (${ticket.customer})\nStart work; collect balance ${money(bal)} before delivery: /balance ${ticket.ref}`);
+      if (ADMIN) {
+        await sendText(ADMIN, `💰 *DEPOSIT ${ticket.ref}* — ${money(paidNow)} (${money(paidSoFar)} of ${money(total)})\nCustomer: ${ticket.name} (${ticket.customer})\nStart work; collect balance ${money(bal)} before delivery: /balance ${ticket.ref}`);
       }
       console.log("✅ Deposit matched + confirmed:", reference);
     }
@@ -102,6 +102,19 @@ app.use("/img", express.static("public/img")); // self-hosted product/proof imag
 app.use(express.json());
 
 app.get("/", (_req, res) => res.send("WhatsApp bot is running. Webhooks: /webhook (WhatsApp), /webhooks/paystack ✅"));
+app.get("/health", (_req, res) => {
+  res.json({
+    ok: true,
+    shop: process.env.SHOP_NAME || null,
+    hasToken: Boolean(process.env.WHATSAPP_TOKEN),
+    hasPhoneId: Boolean(process.env.PHONE_NUMBER_ID),
+    hasAdmin: Boolean(process.env.ADMIN_PHONE),
+    hasAccount: Boolean(process.env.SHOP_ACCOUNT_DETAILS),
+    payments: Boolean(process.env.PAYSTACK_SECRET_KEY),
+    supabase: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY),
+    botNumber: Boolean(process.env.BOT_NUMBER),
+  });
+});
 
 // ---- WhatsApp webhook verification ----
 app.get("/webhook", (req, res) => {
@@ -189,4 +202,7 @@ function normalize(message) {
 // restarts), then start serving. Local-first: never overwrites existing files.
 await restoreFromCloud().catch((e) => console.error("cloud restore failed:", e.message));
 
+const missing = ["WHATSAPP_TOKEN", "PHONE_NUMBER_ID", "ADMIN_PHONE"].filter((k) => !process.env[k]);
+if (missing.length) console.warn("⚠️ BOOT WARN — missing env:", missing.join(", "));
+if (!process.env.SHOP_ACCOUNT_DETAILS) console.warn("⚠️ BOOT WARN — SHOP_ACCOUNT_DETAILS empty (manual pay copy will use fallback)");
 app.listen(PORT, () => console.log(`Listening on :${PORT}`));

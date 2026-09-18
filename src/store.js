@@ -17,7 +17,10 @@ function readJson(file, fallback) {
 }
 function writeJson(file, obj) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(obj, null, 2));
+  // Atomic write: temp + rename so a crash mid-write can't leave half JSON.
+  const tmp = file + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
+  fs.renameSync(tmp, file);
   // Mirror orders to the cloud (Supabase) — Render's free disk is wiped on
   // restart. Fire-and-forget: never blocks chat, no-op without keys.
   if (file === TICKETS_FILE) cloudBackupTickets(obj);

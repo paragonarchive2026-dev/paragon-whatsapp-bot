@@ -15,6 +15,10 @@ const SHOP = () => process.env.SHOP_NAME || "our shop";
 const ADMIN = () => process.env.ADMIN_PHONE || "";
 const TAGLINE = "Fast. Creative. Affordable. That's The Paragon Way! 💪🏽";
 const MENU_IMG = "https://whatsapp-bot-1j6f.onrender.com/img/proof-boost-1.jpg";
+function shopAccount() {
+  return process.env.SHOP_ACCOUNT_DETAILS
+    || "OPay 9063932487 — Jibril Abdullahi Onoruoiza\n(Use your order ref as narration)";
+}
 
 
 /** Delivery ETA line from product name/id — used in payment + delivery copy. */
@@ -192,11 +196,35 @@ async function trackLookup(to, code, session = null) {
       : `Hmm, I can't find *${c}* 🤔\nCheck the ref (looks like SHOP-XXXX) and try again, or talk to us below 👇\n\n${TAGLINE}`;
   }
   await sendText(to, body);
-  setMenu(session, ["menu", "human"]);
-  await sendButtons(to, "Anything else? 👇", [
-    { id: "menu", title: "1. Main Menu" },
-    { id: "human", title: "2. Talk to Human" },
-  ]);
+  // Smart next-steps from status (reorder on delivered, pay claim on unpaid)
+  let btns;
+  const st = ticket?.status;
+  if (st === "delivered" && ticket?.productId && ticket.productId !== "CART") {
+    btns = [
+      { id: `reorder_${ticket.productId}`, title: "1. 🔁 Order again" },
+      { id: "refer", title: "2. 🎁 Refer & earn" },
+      { id: "menu", title: "3. Main Menu" },
+    ];
+  } else if (st && ["new_order", "quoted", "deposit_paid"].includes(st)) {
+    btns = [
+      { id: "paid_claim", title: "1. ✅ I paid" },
+      { id: "menu", title: "2. Main Menu" },
+      { id: "human", title: "3. Talk to Human" },
+    ];
+  } else if (st === "paid") {
+    btns = [
+      { id: "track", title: "1. Track Order" },
+      { id: "menu", title: "2. Main Menu" },
+      { id: "human", title: "3. Talk to Human" },
+    ];
+  } else {
+    btns = [
+      { id: "menu", title: "1. Main Menu" },
+      { id: "human", title: "2. Talk to Human" },
+    ];
+  }
+  setMenu(session, btns.map((b) => b.id));
+  await sendButtons(to, "Anything else? 👇", btns);
 }
 
 // "Paid!" with smart matching: 0 open orders → settled-or-generic ack;
@@ -273,7 +301,7 @@ export async function showMenu(to, session = null) {
     { id: "track", title: "2. Track Order" },
     { id: "faqs", title: "3. Help / FAQs" },
   ];
-  const menuBody = `✨ *PARAGON HUB* ✨\n${hello}\n\nWebsites • Graphics • Social media boost\nHow can we help you today?${refAsk}\n\n${TAGLINE}`;
+  const menuBody = `✨ *PARAGON HUB* ✨\n${hello}\n\n🌐 Websites  ·  🎨 Graphics  ·  📱 Boosts\nHow can we help you today?\n\n_Also try: *proof* · *refer* · *find logo*_${refAsk}\n\n${TAGLINE}`;
   try {
     await sendButtons(to, menuBody, menuBtns, { headerImage: MENU_IMG, footer: "Tap a button or reply 1, 2, 3" });
   } catch {
@@ -626,7 +654,7 @@ export async function handleIncoming(from, msg, messageId) {
 
   // Admin typed a command mid-sentence ("quote: /quote SHOP-X ...")? Point at the
   // format instead of letting it fall through to track-lookup.
-  if (ADMIN() && from === ADMIN() && !(msg.buttonId || msg.listId) && getSession(from).step === "idle" && /\/(quote|paid|balance|remind|resume|deliver)\b/.test(msg.text || "")) {
+  if (ADMIN() && from === ADMIN() && !(msg.buttonId || msg.listId) && getSession(from).step === "idle" && /\/(quote|paid|balance|remind|resume|deliver|cancel)\b/.test(msg.text || "")) {
     const mref = (msg.text || "").match(/SHOP-[A-Z0-9]+/i);
     await sendText(from, `Almost! Admin commands must START with / (nothing before it). Try:\n/quote ${mref ? mref[0].toUpperCase() : "SHOP-XXX"} 15000\n(no < > brackets — plain digits only)`);
     return;
@@ -715,7 +743,7 @@ export async function handleIncoming(from, msg, messageId) {
       await askBankRef(from, session, ref); // already on it — re-prompt, don't store "paid" as the ID
       return;
     }
-    const bankRef = lower === "skip" ? "" : text;
+    const bankRef = (lower === "skip" || actionId === "skip") ? "" : text;
     const ticket = ref && getTicketByRef(ref);
     resetSession(from);
     if (!ticket) {
@@ -838,18 +866,31 @@ export async function handleIncoming(from, msg, messageId) {
     return;
   }
   if (session.step === "order_name") {
+    if ([...String(text || "").trim()].length < 2) {
+      await sendText(from, "Please send your *full name* (at least 2 characters). Or *cancel*.");
+      return;
+    }
     session.form.name = text;
     session.step = "order_phone";
     await sendText(from, session.form.isQuote ? "Step 2/3: What is your *phone number*?" : "Step 3/4: What is your *phone number*?");
     return;
   }
   if (session.step === "order_phone") {
+    const digits = String(text || "").replace(/\D/g, "");
+    if (digits.length < 7) {
+      await sendText(from, "That doesn't look like a phone number 📱 — send digits (e.g. 08012345678). Or *cancel*.");
+      return;
+    }
     session.form.phone = text;
     session.step = "order_details";
     await askOrderDetails(from, session, session.form.isQuote ? "Step 3/3" : "Step 4/4");
     return;
   }
   if (session.step === "order_details") {
+    if ([...String(text || "").trim()].length < 3) {
+      await sendText(from, "Please add a bit more detail (link, username, or brief) so we can start right 🙏 Or *cancel*.");
+      return;
+    }
     session.form.details = text;
     const ref = `SHOP-${Date.now().toString(36).toUpperCase()}${from.slice(-4)}`;
 
@@ -938,7 +979,7 @@ export async function handleIncoming(from, msg, messageId) {
         await sendText(from, summary + `\n\n⚠️ Online payment is down right now — we'll message you payment details shortly. Your ref is *${ref}*.\n\n${TAGLINE}`);
       }
     } else {
-      const acct = process.env.SHOP_ACCOUNT_DETAILS || "our account details (ask admin to set SHOP_ACCOUNT_DETAILS)";
+      const acct = shopAccount();
       await sendText(
         from,
         summary + `\n\n💳 *How to pay:*\nTransfer *${formatPrice(due)}*${split ? " deposit" : ""} (exact amount) to:\n${acct}\nUse *${ref}* as narration/description.\nThen reply *paid* here — we'll verify and start your job ✅\n\n${TAGLINE}`
@@ -947,10 +988,11 @@ export async function handleIncoming(from, msg, messageId) {
     if (ADMIN()) {
       await sendText(ADMIN(), `🆕 *NEW ORDER ${ref}*\nFrom: ${from}\nService: ${t.product} (${t.productId})${t.qty > 1 ? ` x${t.qty}` : ""}\nTotal: ${formatPrice(total)}${reward ? ` (🎁 ${reward.type} -${formatPrice(reward.discount)})` : ""}${split ? ` (deposit ${formatPrice(due)} now)` : ""}\nName: ${t.name}\nPhone: ${t.phone}\nDetails: ${t.details}\nPayment: ${paymentsEnabled() ? "Paystack link sent" : "manual transfer"}`);
     }
-    setMenu(session, ["track", "menu"]);
-    await sendButtons(from, "Track it anytime 👇", [
-      { id: "track", title: "1. Track Order" },
-      { id: "menu", title: "2. Main Menu" },
+    setMenu(session, ["paid_claim", "track", "menu"]);
+    await sendButtons(from, "After you pay 👇", [
+      { id: "paid_claim", title: "1. ✅ I paid" },
+      { id: "track", title: "2. Track Order" },
+      { id: "menu", title: "3. Main Menu" },
     ]);
     return;
   }
@@ -1044,6 +1086,15 @@ export async function handleIncoming(from, msg, messageId) {
   }
   if (actionId.startsWith("paidfor_")) {
     await confirmPaidFor(from, actionId.replace("paidfor_", ""), session);
+    return;
+  }
+  if (actionId === "paid_claim") {
+    await handlePaidClaim(from, session, messageId);
+    return;
+  }
+  if (actionId.startsWith("reorder_")) {
+    const pid = actionId.replace("reorder_", "");
+    await startOrder(from, session, pid);
     return;
   }
   if (actionId.startsWith("approve_")) {

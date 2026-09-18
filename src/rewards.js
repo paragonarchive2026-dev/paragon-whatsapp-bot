@@ -4,7 +4,7 @@
  *   code pre-filled — friend taps the link, presses send, done (no typing).
  *   Plain wa.me links carry no webhook attribution, so the pre-filled text
  *   IS the tracking mechanism (research-confirmed pattern).
- * - A referral counts when the friend creates their FIRST order/request ticket.
+ * - A referral counts when the friend completes their FIRST payment (or a free reward order).
  * - Milestones (owner's policy): 1 → 10% off next order · 3 → FREE Starter
  *   (any platform) · 5 → FREE Growth (any platform).
  * - Rewards AUTO-APPLY at checkout (chat, cart, flow form, /quote) — nobody
@@ -43,7 +43,9 @@ function readDb() {
 }
 function writeDb(db) {
   fs.mkdirSync(path.dirname(REF_FILE), { recursive: true });
-  fs.writeFileSync(REF_FILE, JSON.stringify(db, null, 2));
+  const tmp = REF_FILE + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
+  fs.renameSync(tmp, REF_FILE);
   cloudBackupReferrals(db); // fire-and-forget cloud mirror (no-op without keys)
 }
 function userOf(db, phone) {
