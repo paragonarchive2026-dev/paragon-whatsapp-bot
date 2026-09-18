@@ -9,7 +9,7 @@ import { startCartCheckout, handleCartStep, sendNativeCatalog } from "./cart.js"
 import { handleProofAction } from "./proof.js";
 import { handleFlowDone, handleIncomingMedia } from "./growth.js";
 import { getOrCreateCode, parseCode, shareLink, recordJoin, recordOrderCredit, peekReward, consumeReward, rewardsSummary, recordAcquisition } from "./rewards.js";
-import { confirmTicketPayment, handleApprove, handleDeclineStart, handleDeclineReason, sendApprovalCard, showPendingDashboard, showTicketAdmin, showAdminMenu, showAdminMore, pickTicketFor, showPaidConfirm, askQuoteAmount, askPaidAmount, showPausedChats, adminHelp, sendQuoteNow, sendBalanceNow, sendRemindNow, resumeChat, reportPaidResult, depositDue, notifyHandover, enterReplyMode, showPausedChat } from "./admin.js";
+import { confirmTicketPayment, handleApprove, handleDeclineStart, handleDeclineReason, sendApprovalCard, showPendingDashboard, showTicketAdmin, showAdminMenu, showAdminMore, pickTicketFor, showPaidConfirm, askQuoteAmount, askPaidAmount, showPausedChats, adminHelp, sendQuoteNow, sendBalanceNow, sendRemindNow, resumeChat, reportPaidResult, depositDue, notifyHandover, enterReplyMode, showPausedChat, showDeliverConfirm, deliverTicket } from "./admin.js";
 
 const SHOP = () => process.env.SHOP_NAME || "our shop";
 const ADMIN = () => process.env.ADMIN_PHONE || "";
@@ -137,6 +137,8 @@ function ticketStatusText(t) {
       return `Quote sent: *${formatPrice(t.total)}* — awaiting your payment 💳`;
     case "paid":
       return "Paid ✅ — work scheduled / in progress 🛠️";
+    case "delivered":
+      return "Delivered 🎉 — enjoy! Loved it? Tap *refer* and earn rewards for every friend you send us 🙏";
     case "deposit_paid": {
       const total = t.total || 0;
       const paid = t.paidSoFar || 0;
@@ -282,6 +284,7 @@ async function showFaqList(to, page = 0, session = null) {
 // ================= TAP-TO-TRACK (no typing your ref) =================
 const statusIcon = (t) =>
   t.status === "paid" ? "Paid ✅"
+  : t.status === "delivered" ? "Delivered 🎉"
   : t.status === "deposit_paid" ? "Deposit paid ⏳"
   : t.status === "quoted" ? "Quoted 💬"
   : t.status === "awaiting_quote" ? "Quote soon 💬"
@@ -579,13 +582,17 @@ export async function handleIncoming(from, msg, messageId) {
       await sendRemindNow(from, target);
       return;
     }
-    await sendText(from, "Admin commands:\n/resume <number> — hand chat back to bot\n/quote <ref> <amount> — send exact quote + payment link\n/paid <ref> [amount] — confirm a manual payment\n/balance <ref> — send balance payment link\n/remind <ref> — resend payment reminder (needs approved template)\n(or tap ✅ Approve on payment cards / type *pending* — or send *admin* for the 👑 button menu)");
+    if (cmd === "/deliver" && target) {
+      await deliverTicket(from, target);
+      return;
+    }
+    await sendText(from, "Admin commands:\n/resume <number> — hand chat back to bot\n/quote <ref> <amount> — send exact quote + payment link\n/paid <ref> [amount] — confirm a manual payment\n/balance <ref> — send balance payment link\n/remind <ref> — resend payment reminder (needs approved template)\n/deliver <ref> — mark a paid order delivered\n(or tap ✅ Approve on payment cards / type *pending* — or send *admin* for the 👑 button menu)");
     return;
   }
 
   // Admin typed a command mid-sentence ("quote: /quote SHOP-X ...")? Point at the
   // format instead of letting it fall through to track-lookup.
-  if (ADMIN() && from === ADMIN() && !(msg.buttonId || msg.listId) && getSession(from).step === "idle" && /\/(quote|paid|balance|remind|resume)\b/.test(msg.text || "")) {
+  if (ADMIN() && from === ADMIN() && !(msg.buttonId || msg.listId) && getSession(from).step === "idle" && /\/(quote|paid|balance|remind|resume|deliver)\b/.test(msg.text || "")) {
     const mref = (msg.text || "").match(/SHOP-[A-Z0-9]+/i);
     await sendText(from, `Almost! Admin commands must START with / (nothing before it). Try:\n/quote ${mref ? mref[0].toUpperCase() : "SHOP-XXX"} 15000\n(no < > brackets — plain digits only)`);
     return;
@@ -1038,9 +1045,9 @@ export async function handleIncoming(from, msg, messageId) {
     else await adminHelp(from, session);
     return;
   }
-  if (actionId === "aquote_pick" || actionId === "apaid_pick" || actionId === "abal_pick" || actionId === "aremind_pick") {
+  if (actionId === "aquote_pick" || actionId === "apaid_pick" || actionId === "abal_pick" || actionId === "aremind_pick" || actionId === "adeliver_pick") {
     if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
-    await pickTicketFor(from, { aquote_pick: "quote", apaid_pick: "paid", abal_pick: "balance", aremind_pick: "remind" }[actionId], session);
+    await pickTicketFor(from, { aquote_pick: "quote", apaid_pick: "paid", abal_pick: "balance", aremind_pick: "remind", adeliver_pick: "deliver" }[actionId], session);
     return;
   }
   if (actionId.startsWith("aquote_")) {
@@ -1061,6 +1068,16 @@ export async function handleIncoming(from, msg, messageId) {
   if (actionId.startsWith("apaid_")) {
     if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
     await showPaidConfirm(from, actionId.replace("apaid_", ""), session);
+    return;
+  }
+  if (actionId.startsWith("adelivergo_")) {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await deliverTicket(from, actionId.replace("adelivergo_", ""));
+    return;
+  }
+  if (actionId.startsWith("adeliver_")) {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await showDeliverConfirm(from, actionId.replace("adeliver_", ""), session);
     return;
   }
   if (actionId.startsWith("abal_")) {

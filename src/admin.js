@@ -361,6 +361,7 @@ export async function showAdminMore(to, session = null) {
   const rows = [
     { id: "apaid_pick", title: "Confirm payment" },
     { id: "abal_pick", title: "Request balance" },
+    { id: "adeliver_pick", title: "Mark delivered 🎉" },
     { id: "aremind_pick", title: "Send reminder" },
     { id: "aresume_list", title: "Paused chats" },
     { id: "ahelp", title: "Admin help" },
@@ -378,13 +379,14 @@ const PICK = {
   paid: { filter: (t) => ["new_order", "quoted", "deposit_paid"].includes(t.status), prefix: "apaid_", empty: "Nothing awaiting payment confirmation 🎉" },
   balance: { filter: (t) => t.status === "deposit_paid", prefix: "abal_", empty: "No deposits awaiting balance 🎉" },
   remind: { filter: (t) => ["new_order", "quoted", "deposit_paid"].includes(t.status) && ((t.dueNow ?? t.total ?? 0) > 0), prefix: "aremind_", empty: "Nobody to remind right now 🎉" },
+  deliver: { filter: (t) => t.status === "paid", prefix: "adeliver_", empty: "Nothing awaiting delivery 🎉" },
 };
 
 /** Tap-to-pick ticket list for quote / paid / balance / remind. Admin-only (guarded by caller). */
 export async function pickTicketFor(to, kind, session = null) {
   const cfg = PICK[kind];
   const list = getAllTickets().filter((t) => t.ref && cfg.filter(t)).slice(-9).reverse();
-  const titles = { quote: "Send quote", paid: "Confirm payment", balance: "Request balance", remind: "Send reminder" };
+  const titles = { quote: "Send quote", paid: "Confirm payment", balance: "Request balance", remind: "Send reminder", deliver: "Mark delivered" };
   if (!list.length) {
     if (session) session.menu = ["adminmenu"];
     await sendText(to, cfg.empty);
@@ -462,7 +464,7 @@ export async function showPausedChats(to, session = null) {
 /** One-screen boss guide. Admin-only (guarded by caller). */
 export async function adminHelp(to, session = null) {
   if (session) session.menu = ["adminmenu"];
-  await sendText(to, "👑 *Boss quick guide*\n• Send *admin* anytime = this button menu\n• *pending* = orders needing approval\n• Tap ✅ Approve on payment cards\n• Typing still works: /quote /paid /balance /remind /resume");
+  await sendText(to, "👑 *Boss quick guide*\n• Send *admin* anytime = this button menu\n• *pending* = orders needing approval\n• Tap ✅ Approve on payment cards\n• Typing still works: /quote /paid /balance /remind /resume /deliver");
   await sendButtons(to, "Back 👇", [{ id: "adminmenu", title: "1. 👑 Boss Menu" }]);
 }
 
@@ -507,4 +509,50 @@ export async function showPausedChat(to, phone, session = null) {
     { id: `aresume_${p}`, title: "2. ✅ Resume" },
     { id: "adminmenu", title: "3. Boss Menu" },
   ]);
+}
+
+// ---- Delivery: close the loop (boss marks delivered → customer celebrates + refers) ----
+/** Confirm screen before a delivery notice goes out. Admin-only (guarded by caller). */
+export async function showDeliverConfirm(to, ref, session = null) {
+  const t = getTicketByRef(String(ref || "").toUpperCase());
+  if (!t) {
+    await sendText(to, `❌ No ticket ${ref}.`);
+    return;
+  }
+  if (t.status !== "paid") {
+    await sendText(to, `❌ ${t.ref} isn't paid yet (status: ${t.status}). Only paid orders can be marked delivered.`);
+    return;
+  }
+  if (session) session.menu = [`adelivergo_${t.ref}`, "adminmenu"];
+  await sendButtons(to, `Mark *${t.ref}* (${t.product || ""}) as delivered?\n${t.name || "?"} (${t.customer}) will be notified 🎉`, [
+    { id: `adelivergo_${t.ref}`, title: "1. ✅ Yes, delivered" },
+    { id: "adminmenu", title: "2. Boss Menu" },
+  ]);
+}
+
+/** Mark delivered + notify + invite referral. Shared by /deliver and the button flow. */
+export async function deliverTicket(adminFrom, target) {
+  const from = adminFrom;
+  const ticket = getTicketByRef(String(target || "").toUpperCase());
+  if (!ticket) {
+    await sendText(from, `❌ No ticket ${target}.`);
+    return;
+  }
+  if (ticket.status !== "paid") {
+    await sendText(from, `❌ ${ticket.ref} isn't paid yet (status: ${ticket.status}). Only paid orders can be marked delivered.`);
+    return;
+  }
+  updateTicket(ticket.ref, { status: "delivered", deliveredAt: new Date().toISOString() });
+  const cs = getSession(ticket.customer);
+  cs.menu = ["refer", "shop", "menu"];
+  await sendText(
+    ticket.customer,
+    `🎉 *Order ${ticket.ref} delivered!*\n\n🧾 ${ticket.product || ""}${ticket.qty > 1 ? ` x${ticket.qty}` : ""}\nEnjoy — and thanks for trusting ${process.env.SHOP_NAME || "us"} 🙏\n\nLoved it? Refer a friend and earn: 1 friend = 10% off your next order, automatically 🎁\n\n${TAGLINE}`
+  );
+  await sendButtons(ticket.customer, "What next? 👇", [
+    { id: "refer", title: "1. 🎁 Refer & earn" },
+    { id: "shop", title: "2. 🛍️ Shop again" },
+    { id: "menu", title: "3. Main Menu" },
+  ]);
+  await sendText(from, `✅ ${ticket.ref} marked DELIVERED. Customer notified.`);
 }
