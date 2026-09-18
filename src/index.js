@@ -95,6 +95,8 @@ app.post("/webhooks/paystack", express.raw({ type: "application/json" }), async 
   }
 });
 
+app.use("/img", express.static("public/img")); // self-hosted product/proof images
+
 app.use(express.json());
 
 app.get("/", (_req, res) => res.send("WhatsApp bot is running. Webhooks: /webhook (WhatsApp), /webhooks/paystack ✅"));

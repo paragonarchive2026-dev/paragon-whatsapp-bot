@@ -13,7 +13,7 @@
  */
 import fs from "node:fs";
 
-const BOT_LINK = "https://wa.me/REPLACE_WITH_BOT_NUMBER";
+const BOT_LINK = "https://wa.me/2348154936650";
 const catalog = JSON.parse(fs.readFileSync("data/products.json", "utf8"));
 
 const header = ["id", "title", "description", "availability", "condition", "price", "link", "image_link", "brand"];

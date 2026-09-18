@@ -1,15 +1,55 @@
 {
-  "_note": "PROOF GALLERIES — paste free image links (ImgBB/Imgur/Cloudinary) into images arrays. 2-4 images per pack, JPG/PNG ideally under 1MB each for fast delivery. Customers reach this via FAQ 'See proof & past work' or keywords: proof / sample / example / portfolio / past work.",
+  "_note": "Starter galleries (AI-made, self-hosted in public/img). Swap any URL for real client-work photos anytime.",
   "categories": [
-    { "id": "logos", "title": "Logo designs", "blurb": "Recent logos we made" },
-    { "id": "flyers", "title": "Flyers & banners", "blurb": "Designs that sell" },
-    { "id": "websites", "title": "Websites built", "blurb": "Screenshots of live sites" },
-    { "id": "boost", "title": "Boost before/after", "blurb": "Real results proof" }
+    {
+      "id": "logos",
+      "title": "Logo designs",
+      "blurb": "Recent logos we made"
+    },
+    {
+      "id": "flyers",
+      "title": "Flyers & banners",
+      "blurb": "Designs that sell"
+    },
+    {
+      "id": "websites",
+      "title": "Websites built",
+      "blurb": "Screenshots of live sites"
+    },
+    {
+      "id": "boost",
+      "title": "Boost before/after",
+      "blurb": "Real results proof"
+    }
   ],
   "packs": {
-    "logos": { "caption": "Logos we designed for clients 🔥", "images": [] },
-    "flyers": { "caption": "Flyers & banners that grab attention 🎨", "images": [] },
-    "websites": { "caption": "Websites we built 🌐", "images": [] },
-    "boost": { "caption": "Real boost results — before vs after 📈", "images": [] }
+    "logos": {
+      "caption": "Logos we designed for clients \ud83d\udd25",
+      "images": [
+        "https://whatsapp-bot-1j6f.onrender.com/img/proof-logo-1.jpg",
+        "https://whatsapp-bot-1j6f.onrender.com/img/proof-logo-2.jpg"
+      ]
+    },
+    "flyers": {
+      "caption": "Flyers & banners that grab attention \ud83c\udfa8",
+      "images": [
+        "https://whatsapp-bot-1j6f.onrender.com/img/proof-flyer-1.jpg",
+        "https://whatsapp-bot-1j6f.onrender.com/img/proof-flyer-2.jpg"
+      ]
+    },
+    "websites": {
+      "caption": "Websites we built \ud83c\udf10",
+      "images": [
+        "https://whatsapp-bot-1j6f.onrender.com/img/proof-web-1.jpg",
+        "https://whatsapp-bot-1j6f.onrender.com/img/proof-web-2.jpg"
+      ]
+    },
+    "boost": {
+      "caption": "Real boost results \u2014 before vs after \ud83d\udcc8",
+      "images": [
+        "https://whatsapp-bot-1j6f.onrender.com/img/proof-boost-1.jpg",
+        "https://whatsapp-bot-1j6f.onrender.com/img/proof-boost-2.jpg"
+      ]
+    }
   }
 }
