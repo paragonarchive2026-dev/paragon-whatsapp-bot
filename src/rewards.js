@@ -19,6 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { sendText } from "./whatsapp.js";
 import { backupReferrals as cloudBackupReferrals } from "./backup.js";
+import { getTicketsByCustomer } from "./store.js";
 
 const SHOP = () => process.env.SHOP_NAME || "Paragon Hub";
 const ADMIN = () => process.env.ADMIN_PHONE || "";
@@ -107,15 +108,18 @@ export async function recordJoin(newPhone, code) {
   const u = userOf(db, newPhone);
   if (u.referredBy) return { ok: false, reason: "already", by: u.referredBy };
   u.referredBy = code;
+  if (getTicketsByCustomer(newPhone).length > 0) u.creditGiven = true; // pre-existing customers can't mint new credit
   writeDb(db);
   try {
-    await sendText(owner, `🎉 Someone just joined with YOUR referral code!\nYou'll earn your reward automatically once they place their first order. Keep sharing! 🙌\n\n${TAGLINE}`);
+    await sendText(owner, u.creditGiven
+      ? `🎉 Someone joined with YOUR referral code — but they're already an old customer, so no new reward this time. Keep sharing with NEW people! 🙌\n\n${TAGLINE}`
+      : `🎉 Someone just joined with YOUR referral code!\nYou'll earn your reward automatically once they complete their first order. Keep sharing! 🙌\n\n${TAGLINE}`);
   } catch { /* notify is best-effort */ }
   return { ok: true, owner };
 }
 
 /**
- * Call after ANY ticket creation. On the buyer's first ticket, the referrer
+ * Call after first PAYMENT (or fulfilled free order). On the buyer's first payment, the referrer
  * earns + milestone grants are issued + everyone is notified. Owner lifts
  * zero fingers.
  */
@@ -153,7 +157,7 @@ export async function recordOrderCredit(buyerPhone) {
   }
   if (ADMIN()) {
     try {
-      await sendText(ADMIN(), `🎁 Referral: ${owner} now has ${n} order-counted referral(s)${grants.length ? ` → granted: ${grants.join(", ")}` : ""}. (Fully automatic — FYI only.)`);
+      await sendText(ADMIN(), `🎁 Referral: ${owner} now has ${n} payment-counted referral(s)${grants.length ? ` → granted: ${grants.join(", ")}` : ""}. (Fully automatic — FYI only.)`);
     } catch { /* best-effort */ }
   }
   return { owner, count: n, grants };
@@ -249,4 +253,32 @@ export function recordAcquisition(phone, referral) {
       writeDb(db);
     }
   } catch { /* never block chat on analytics */ }
+}
+
+export function isReferred(phone) {
+  const db = readDb();
+  return !!db.users[phone]?.referredBy;
+}
+
+/** Boss overview: program health at a glance. */
+export function referralStats() {
+  const db = readDb();
+  const entries = Object.entries(db.users);
+  const joins = entries.filter(([, u]) => u.referredBy).length;
+  const credited = entries.filter(([, u]) => u.creditGiven).length;
+  const off10out = entries.reduce((s, [, u]) => s + (u.rewards?.off10 || 0), 0);
+  const freeOut = entries.filter(([, u]) => u.rewards?.freeStarter || u.rewards?.freeGrowth).length;
+  const used = entries.reduce((s, [, u]) => s + (u.rewardsUsed?.length || 0), 0);
+  const top = entries.map(([p, u]) => ({ p, n: (u.referrals || []).length })).filter((r) => r.n > 0).sort((a, b) => b.n - a.n).slice(0, 5);
+  const lines = [
+    `📊 *Referral stats*`,
+    ``,
+    `Members: *${entries.length}* • Joined via code: *${joins}* • Paid (counted): *${credited}*`,
+    `Rewards out: *${off10out}* × 10% off • *${freeOut}* free packs • Used so far: *${used}*`,
+    ``,
+    ...(top.length ? [`🏆 Top referrers:`, ...top.map((r, i) => `${i + 1}. ${r.p} — ${r.n}`)] : [`No counted referrals yet — share codes to grow!`]),
+    ``,
+    TAGLINE,
+  ];
+  return lines.join("\n");
 }

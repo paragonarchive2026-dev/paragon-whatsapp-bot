@@ -8,12 +8,13 @@ import { paymentsEnabled, createPaymentLink } from "./payments.js";
 import { startCartCheckout, handleCartStep, sendNativeCatalog } from "./cart.js";
 import { handleProofAction } from "./proof.js";
 import { handleFlowDone, handleIncomingMedia } from "./growth.js";
-import { getOrCreateCode, parseCode, shareLink, recordJoin, recordOrderCredit, peekReward, consumeReward, rewardsSummary, recordAcquisition } from "./rewards.js";
-import { confirmTicketPayment, handleApprove, handleDeclineStart, handleDeclineReason, sendApprovalCard, showPendingDashboard, showTicketAdmin, showAdminMenu, showAdminMore, pickTicketFor, showPaidConfirm, askQuoteAmount, askPaidAmount, showPausedChats, adminHelp, sendQuoteNow, sendBalanceNow, sendRemindNow, resumeChat, reportPaidResult, depositDue, notifyHandover, enterReplyMode, showPausedChat, showDeliverConfirm, deliverTicket, sendDeclineNow } from "./admin.js";
+import { getOrCreateCode, parseCode, shareLink, recordJoin, recordOrderCredit, peekReward, consumeReward, rewardsSummary, recordAcquisition, isReferred } from "./rewards.js";
+import { confirmTicketPayment, handleApprove, handleDeclineStart, handleDeclineReason, sendApprovalCard, showPendingDashboard, showTicketAdmin, showAdminMenu, showAdminMore, pickTicketFor, showPaidConfirm, askQuoteAmount, askPaidAmount, showPausedChats, adminHelp, sendQuoteNow, sendBalanceNow, sendRemindNow, resumeChat, reportPaidResult, depositDue, notifyHandover, enterReplyMode, showPausedChat, showDeliverConfirm, deliverTicket, sendDeclineNow, showCancelConfirm, cancelTicket, showRefStats } from "./admin.js";
 
 const SHOP = () => process.env.SHOP_NAME || "our shop";
 const ADMIN = () => process.env.ADMIN_PHONE || "";
 const TAGLINE = "Fast. Creative. Affordable. That's The Paragon Way! 💪🏽";
+const MENU_IMG = "https://whatsapp-bot-1j6f.onrender.com/img/proof-boost-1.jpg";
 
 // Design services (custom brief) vs boost packs (username/link)
 const DESIGN_CATS = ["webdesign", "graphics"];
@@ -140,6 +141,8 @@ function ticketStatusText(t) {
       return "Paid ✅ — work scheduled / in progress 🛠️";
     case "delivered":
       return "Delivered 🎉 — enjoy! Loved it? Tap *refer* and earn rewards for every friend you send us 🙏";
+    case "cancelled":
+      return "Cancelled 🚫 — if you've paid, reply here and we'll sort your refund immediately 🙏";
     case "deposit_paid": {
       const total = t.total || 0;
       const paid = t.paidSoFar || 0;
@@ -247,16 +250,18 @@ export async function showMenu(to, session = null) {
   setMenu(session, ["shop", "track", "faqs"]);
   const known = getLatestTicketByCustomer(to);
   const hello = known?.name ? `Welcome back, ${String(known.name).split(" ")[0]}! 👋` : `Hi 👋 Welcome to *${SHOP()}*! 😊`;
-  await sendButtons(
-    to,
-    `${hello}\nWebsites, graphics & social media boost — how can I help?\n\n${TAGLINE}`,
-    [
-      { id: "shop", title: "1. 🛍️ Shop" },
-      { id: "track", title: "2. Track Order" },
-      { id: "faqs", title: "3. Help / FAQs" },
-    ],
-    { header: "✨ PARAGON HUB ✨", footer: "Tap a button or reply 1, 2, 3" }
-  );
+  const refAsk = !known && !isReferred(to) ? `\n\n🎁 *Were you referred by a friend?* Just send their code (e.g. PG-XXXX) — you'll both benefit!` : "";
+  const menuBtns = [
+    { id: "shop", title: "1. 🛍️ Shop" },
+    { id: "track", title: "2. Track Order" },
+    { id: "faqs", title: "3. Help / FAQs" },
+  ];
+  const menuBody = `✨ *PARAGON HUB* ✨\n${hello}\nWebsites, graphics & social media boost — how can I help?${refAsk}\n\n${TAGLINE}`;
+  try {
+    await sendButtons(to, menuBody, menuBtns, { headerImage: MENU_IMG, footer: "Tap a button or reply 1, 2, 3" });
+  } catch {
+    await sendButtons(to, menuBody, menuBtns, { header: "✨ PARAGON HUB ✨", footer: "Tap a button or reply 1, 2, 3" });
+  }
 }
 
 async function showFaqList(to, page = 0, session = null) {
@@ -286,6 +291,7 @@ async function showFaqList(to, page = 0, session = null) {
 const statusIcon = (t) =>
   t.status === "paid" ? "Paid ✅"
   : t.status === "delivered" ? "Delivered 🎉"
+  : t.status === "cancelled" ? "Cancelled 🚫"
   : t.status === "deposit_paid" ? "Deposit paid ⏳"
   : t.status === "quoted" ? "Quoted 💬"
   : t.status === "awaiting_quote" ? "Quote soon 💬"
@@ -589,7 +595,11 @@ export async function handleIncoming(from, msg, messageId) {
       await deliverTicket(from, target);
       return;
     }
-    await sendText(from, "Admin commands:\n/resume <number> — hand chat back to bot\n/quote <ref> <amount> — send exact quote + payment link\n/paid <ref> [amount] — confirm a manual payment\n/balance <ref> — send balance payment link\n/remind <ref> — resend payment reminder (needs approved template)\n/deliver <ref> — mark a paid order delivered\n(or tap ✅ Approve on payment cards / type *pending* — or send *admin* for the 👑 button menu)");
+    if (cmd === "/cancel" && target) {
+      await cancelTicket(from, target);
+      return;
+    }
+    await sendText(from, "Admin commands:\n/resume <number> — hand chat back to bot\n/quote <ref> <amount> — send exact quote + payment link\n/paid <ref> [amount] — confirm a manual payment\n/balance <ref> — send balance payment link\n/remind <ref> — resend payment reminder (needs approved template)\n/deliver <ref> — mark a paid order delivered\n/cancel <ref> — cancel an open order\n(or tap ✅ Approve on payment cards / type *pending* — or send *admin* for the 👑 button menu)");
     return;
   }
 
@@ -826,7 +836,6 @@ export async function handleIncoming(from, msg, messageId) {
     if (session.form.isQuote) {
       const t = saveTicket({ ref, customer: from, status: "awaiting_quote", total: null, paidSoFar: 0, dueNow: null, ...session.form });
       resetSession(from);
-      await recordOrderCredit(from);
       await sendReaction(from, messageId, "🎉");
       await sendText(
         from,
@@ -874,7 +883,6 @@ export async function handleIncoming(from, msg, messageId) {
     const split = due < total;
     const t = saveTicket({ ref, customer: from, status: "new_order", paidSoFar: 0, dueNow: due, rewardApplied: reward ? reward.type : null, ...session.form });
     resetSession(from);
-    await recordOrderCredit(from);
     await sendReaction(from, messageId, "🎉");
     if (process.env.STICKER_CELEBRATE) {
       try { await sendSticker(from, process.env.STICKER_CELEBRATE); } catch { /* optional */ }
@@ -1056,9 +1064,9 @@ export async function handleIncoming(from, msg, messageId) {
     else await adminHelp(from, session);
     return;
   }
-  if (actionId === "aquote_pick" || actionId === "apaid_pick" || actionId === "abal_pick" || actionId === "aremind_pick" || actionId === "adeliver_pick") {
+  if (actionId === "aquote_pick" || actionId === "apaid_pick" || actionId === "abal_pick" || actionId === "aremind_pick" || actionId === "adeliver_pick" || actionId === "acancel_pick") {
     if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
-    await pickTicketFor(from, { aquote_pick: "quote", apaid_pick: "paid", abal_pick: "balance", aremind_pick: "remind", adeliver_pick: "deliver" }[actionId], session);
+    await pickTicketFor(from, { aquote_pick: "quote", apaid_pick: "paid", abal_pick: "balance", aremind_pick: "remind", adeliver_pick: "deliver", acancel_pick: "cancel" }[actionId], session);
     return;
   }
   if (actionId.startsWith("aquote_")) {
@@ -1089,6 +1097,21 @@ export async function handleIncoming(from, msg, messageId) {
   if (actionId.startsWith("adeliver_")) {
     if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
     await showDeliverConfirm(from, actionId.replace("adeliver_", ""), session);
+    return;
+  }
+  if (actionId === "arefstats") {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await showRefStats(from, session);
+    return;
+  }
+  if (actionId.startsWith("acancelgo_")) {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await cancelTicket(from, actionId.replace("acancelgo_", ""));
+    return;
+  }
+  if (actionId.startsWith("acancel_")) {
+    if (!adminOK) { await sendText(from, "⛔ Admin only."); return; }
+    await showCancelConfirm(from, actionId.replace("acancel_", ""), session);
     return;
   }
   if (actionId.startsWith("abal_")) {
@@ -1286,6 +1309,10 @@ export async function handleIncoming(from, msg, messageId) {
   {
     const m = text.match(/(SHOP-[A-Z0-9]+|ORD-\d+)/i);
     if (m) {
+      if (adminOK && getTicketByRef(m[1].toUpperCase())) {
+        await showTicketAdmin(from, m[1], session);
+        return;
+      }
       await trackLookup(from, m[1], session);
       return;
     }

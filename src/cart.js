@@ -154,7 +154,6 @@ async function completeCartOrder(from, session) {
   if (cart.hasQuote) {
     const t = saveTicket({ ref, customer: from, status: "awaiting_quote", total: null, paidSoFar: 0, dueNow: null, ...form, details: fullDetails });
     resetSession(from);
-    await recordOrderCredit(from);
     await sendText(
       from,
       `📩 *Request ${ref} received!*\n\n${itemsText}\n👤 ${t.name}\n\nWe'll send your exact total + payment link here shortly.\n⚠️ Reminder: payment first — work begins after confirmation, by appointment 📅\n\n${TAGLINE}`
@@ -194,7 +193,6 @@ async function completeCartOrder(from, session) {
   const split = due < total;
   const t = saveTicket({ ref, customer: from, status: "new_order", total, paidSoFar: 0, dueNow: due, rewardApplied: reward ? reward.type : null, ...form, details: fullDetails });
   resetSession(from);
-  await recordOrderCredit(from);
   const summary =
     `🎉 *Order ${ref} received!*\n\n${itemsText}` +
     `\n💰 Total: *${formatPrice(total)}*` +

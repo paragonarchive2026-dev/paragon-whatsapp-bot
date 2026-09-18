@@ -137,7 +137,6 @@ export async function handleFlowDone(from, msg) {
   // ---- QUOTE MODE (range-priced services) ----
   if (isRange(p)) {
     const t = saveTicket({ ref, customer: from, status: "awaiting_quote", total: null, paidSoFar: 0, dueNow: null, ...form });
-    await recordOrderCredit(from);
     await sendText(
       from,
       `📩 *Request ${ref} received!*\n\n🧾 ${t.product}\n💰 Usual range: *${formatPrice(p.priceMin)} – ${formatPrice(p.priceMax)}*\n👤 ${t.name}\n\nWe'll send your exact price + payment steps here shortly.\n⚠️ Reminder: payment first — work begins after confirmation, by appointment 📅\n\n${TAGLINE}`
@@ -174,7 +173,6 @@ export async function handleFlowDone(from, msg) {
   const due = depositDue(total);
   const split = due < total;
   const t = saveTicket({ ref, customer: from, status: "new_order", price: p.price, total, paidSoFar: 0, dueNow: due, rewardApplied: reward ? reward.type : null, ...form });
-  await recordOrderCredit(from);
   const summary =
     `🎉 *Order ${ref} received!*\n\n🧾 ${t.product}${t.qty > 1 ? ` x${t.qty}` : ""}` +
     `\n💰 Total: *${formatPrice(total)}*` +

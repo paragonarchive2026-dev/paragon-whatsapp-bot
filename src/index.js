@@ -3,6 +3,7 @@ import express from "express";
 import { handleIncoming } from "./bot.js";
 import { verifyPayment, verifyWebhookSignature, paymentsEnabled } from "./payments.js";
 import { getTicketByRef, updateTicket } from "./store.js";
+import { recordOrderCredit } from "./rewards.js";
 import { sendText } from "./whatsapp.js";
 import { restoreFromCloud } from "./backup.js";
 
@@ -68,6 +69,7 @@ app.post("/webhooks/paystack", express.raw({ type: "application/json" }), async 
       paidAt: new Date().toISOString(),
       channel,
     });
+    try { await recordOrderCredit(ticket.customer); } catch { /* credit is best-effort */ }
     const money = (n) => `₦${Number(n).toLocaleString()}`;
     const TAG = "Fast. Creative. Affordable. That's The Paragon Way! 💪🏽";
     if (fullyPaid) {

@@ -10,10 +10,11 @@ import { sendText, sendButtons, sendList, sendReaction, sendUrlButton, sendTempl
 import { getTicketByRef, updateTicket, getAllTickets, getSession, resetSession, paused } from "./store.js";
 import { formatPrice } from "./catalog.js";
 import { paymentsEnabled, createPaymentLink } from "./payments.js";
-import { peekReward, consumeReward } from "./rewards.js";
+import { peekReward, consumeReward, recordOrderCredit, referralStats } from "./rewards.js";
 
 const ADMIN = () => process.env.ADMIN_PHONE || "";
 const TAGLINE = "Fast. Creative. Affordable. That's The Paragon Way! 💪🏽";
+const BOSS_IMG = "https://whatsapp-bot-1j6f.onrender.com/img/proof-logo-2.jpg";
 const isAdmin = (from) => ADMIN() && from === ADMIN();
 
 const uslice = (s, n) => [...String(s || "")].slice(0, n).join("");
@@ -21,6 +22,21 @@ const num = (i, title, max = 24) => `${i + 1}. ${uslice(title, max - `${i + 1}. 
 
 const PAYABLE = ["new_order", "quoted", "deposit_paid", "awaiting_quote"];
 const OPEN = ["new_order", "quoted", "awaiting_quote", "deposit_paid"];
+
+/** Every money message ends with a next step — no dead ends. */
+async function custNext(customer, buttons) {
+  const s = getSession(customer);
+  s.menu = buttons.map((b) => b.id);
+  await sendButtons(customer, "What next? 👇", buttons);
+}
+const TRACK_MENU = [
+  { id: "track", title: "1. Track Order" },
+  { id: "menu", title: "2. Main Menu" },
+];
+const MENU_HUMAN = [
+  { id: "menu", title: "1. Main Menu" },
+  { id: "human", title: "2. Talk to Human" },
+];
 
 /** Shared payment-confirm core (used by /paid AND the Approve button). */
 export async function confirmTicketPayment(ref, amount, channel = "manual") {
@@ -39,11 +55,13 @@ export async function confirmTicketPayment(ref, amount, channel = "manual") {
     channel,
   });
   const t = getTicketByRef(ref);
+  await recordOrderCredit(ticket.customer); // first PAYMENT (not creation) mints referral credit — anti-cheat
   if (fully) {
     await sendText(
       ticket.customer,
       `✅ *Payment confirmed!*\n\n🧾 Order *${ticket.ref}*${ticket.product ? ` (${ticket.product})` : ""}\n💰 Paid in full: *${formatPrice(newPaid)}*\nWork is now scheduled — we'll update you here 🛠️\nType *menu* for anything else.\n\n${TAGLINE}`
     );
+    await custNext(ticket.customer, TRACK_MENU);
   } else {
     await sendText(
       ticket.customer,
@@ -51,6 +69,7 @@ export async function confirmTicketPayment(ref, amount, channel = "manual") {
         (total ? `\nPaid *${formatPrice(newPaid)}* of *${formatPrice(total)}* — balance *${formatPrice(total - newPaid)}* due before delivery.` : "") +
         `\nWork is scheduled 🛠️\n\n${TAGLINE}`
     );
+    await custNext(ticket.customer, TRACK_MENU);
   }
   return { ok: true, fully, ticket: t, newPaid };
 }
@@ -143,6 +162,7 @@ export async function sendDeclineNow(adminFrom, ticket, reason) {
     ticket.customer,
     `⚠️ *Payment update for ${ticket.ref}*\n\nWe couldn't confirm your payment: ${reason}\n\nPlease check the amount / reference and try again — or type *human* and we'll sort it out 🙏\n\n${TAGLINE}`
   );
+  await custNext(ticket.customer, MENU_HUMAN);
   await sendText(from, `✅ Customer ${ticket.customer} notified that ${ticket.ref} was declined. Ticket stays open.`);
 }
 
@@ -269,6 +289,7 @@ export async function sendQuoteNow(adminFrom, target, amount) {
       });
       await sendText(ticket.customer, note);
       await sendUrlButton(ticket.customer, `Pay *${formatPrice(due)}* now with card, transfer or USSD 👇\n\n${TAGLINE}`, "Pay Now", link.authorization_url, { footer: `Ref: ${ticket.ref}` });
+      await custNext(ticket.customer, TRACK_MENU);
       await sendText(from, `✅ Quote ${formatPrice(final)} + payment link (${formatPrice(due)} now) sent to ${ticket.customer}.${reward ? ` (🎁 ${reward.type} auto-applied)` : ""}`);
     } catch (e) {
       await sendText(from, "❌ Paystack error: " + e.message);
@@ -276,6 +297,7 @@ export async function sendQuoteNow(adminFrom, target, amount) {
   } else {
     const acct = process.env.SHOP_ACCOUNT_DETAILS || "(set SHOP_ACCOUNT_DETAILS in env)";
     await sendText(ticket.customer, note + `\n\n💳 Transfer *${formatPrice(due)}* (exact) to:\n${acct}\nNarration: *${ticket.ref}*\nThen reply *paid* ✅\n\n${TAGLINE}`);
+    await custNext(ticket.customer, TRACK_MENU);
     await sendText(from, `✅ Quote sent (manual mode) to ${ticket.customer}.${reward ? ` (🎁 ${reward.type} auto-applied)` : ""}`);
   }
 }
@@ -310,6 +332,7 @@ export async function sendBalanceNow(adminFrom, target) {
       });
       await sendText(ticket.customer, `💰 *Balance due for ${ticket.ref}*\n\nPaid so far: ${formatPrice(total - bal)}\nBalance: *${formatPrice(bal)}*\n\nPay to unlock delivery ✅`);
       await sendUrlButton(ticket.customer, `Pay balance *${formatPrice(bal)}* 👇\n\n${TAGLINE}`, "Pay Balance", link.authorization_url, { footer: `Ref: ${bRef}` });
+      await custNext(ticket.customer, TRACK_MENU);
       await sendText(from, `✅ Balance link (${formatPrice(bal)}) sent to ${ticket.customer}.`);
     } catch (e) {
       await sendText(from, "❌ Paystack error: " + e.message);
@@ -317,6 +340,7 @@ export async function sendBalanceNow(adminFrom, target) {
   } else {
     const acct = process.env.SHOP_ACCOUNT_DETAILS || "(set SHOP_ACCOUNT_DETAILS in env)";
     await sendText(ticket.customer, `💰 *Balance due for ${ticket.ref}*\n\nPaid so far: ${formatPrice(total - bal)}\nTransfer balance *${formatPrice(bal)}* (exact) to:\n${acct}\nNarration: *${ticket.ref}*\nThen reply *paid* ✅\n\n${TAGLINE}`);
+    await custNext(ticket.customer, TRACK_MENU);
     await sendText(from, `✅ Balance request sent (manual). Confirm with: /paid ${ticket.ref} ${bal}`);
   }
 }
@@ -374,11 +398,17 @@ export async function showAdminMenu(to, session = null) {
   const open = getAllTickets().filter((t) => t.ref && OPEN.includes(t.status));
   const dueTotal = open.reduce((s, t) => s + (t.dueNow ?? t.total ?? 0), 0);
   if (session) session.menu = ["pending", "aquote_pick", "adminmore"];
-  await sendButtons(to, `👑 *BOSS CONSOLE*\n${open.length} open • ${formatPrice(dueTotal)} due\nTap what you want to do 👇`, [
+  const consoleBtns = [
     { id: "pending", title: "1. 📋 Pending" },
     { id: "aquote_pick", title: "2. 💰 Quote" },
     { id: "adminmore", title: "3. 📂 More" },
-  ], { header: "👑 PARAGON BOSS", footer: "Tap or reply 1, 2, 3" });
+  ];
+  const consoleBody = `👑 *BOSS CONSOLE*\n${open.length} open • ${formatPrice(dueTotal)} due\nTap what you want to do 👇`;
+  try {
+    await sendButtons(to, consoleBody, consoleBtns, { headerImage: BOSS_IMG, footer: "Tap or reply 1, 2, 3" });
+  } catch {
+    await sendButtons(to, consoleBody, consoleBtns, { header: "👑 PARAGON BOSS", footer: "Tap or reply 1, 2, 3" });
+  }
 }
 
 /** Second level: everything else. Admin-only (guarded by caller). */
@@ -387,6 +417,8 @@ export async function showAdminMore(to, session = null) {
     { id: "apaid_pick", title: "Confirm payment" },
     { id: "abal_pick", title: "Request balance" },
     { id: "adeliver_pick", title: "Mark delivered 🎉" },
+    { id: "acancel_pick", title: "Cancel order 🚫" },
+    { id: "arefstats", title: "Referral stats 📊" },
     { id: "aremind_pick", title: "Send reminder" },
     { id: "aresume_list", title: "Paused chats" },
     { id: "ahelp", title: "Admin help" },
@@ -405,13 +437,14 @@ const PICK = {
   balance: { filter: (t) => t.status === "deposit_paid", prefix: "abal_", empty: "No deposits awaiting balance 🎉" },
   remind: { filter: (t) => ["new_order", "quoted", "deposit_paid"].includes(t.status) && ((t.dueNow ?? t.total ?? 0) > 0), prefix: "aremind_", empty: "Nobody to remind right now 🎉" },
   deliver: { filter: (t) => t.status === "paid", prefix: "adeliver_", empty: "Nothing awaiting delivery 🎉" },
+  cancel: { filter: (t) => OPEN.includes(t.status), prefix: "acancel_", empty: "Nothing open to cancel 🎉" },
 };
 
 /** Tap-to-pick ticket list for quote / paid / balance / remind. Admin-only (guarded by caller). */
 export async function pickTicketFor(to, kind, session = null) {
   const cfg = PICK[kind];
   const list = getAllTickets().filter((t) => t.ref && cfg.filter(t)).slice(-9).reverse();
-  const titles = { quote: "Send quote", paid: "Confirm payment", balance: "Request balance", remind: "Send reminder", deliver: "Mark delivered" };
+  const titles = { quote: "Send quote", paid: "Confirm payment", balance: "Request balance", remind: "Send reminder", deliver: "Mark delivered", cancel: "Cancel order" };
   if (!list.length) {
     if (session) session.menu = ["adminmenu"];
     await sendText(to, cfg.empty);
@@ -489,7 +522,7 @@ export async function showPausedChats(to, session = null) {
 /** One-screen boss guide. Admin-only (guarded by caller). */
 export async function adminHelp(to, session = null) {
   if (session) session.menu = ["adminmenu"];
-  await sendText(to, "👑 *Boss quick guide*\n• Send *admin* anytime = this button menu\n• *pending* = orders needing approval\n• Tap ✅ Approve on payment cards\n• Typing still works: /quote /paid /balance /remind /resume /deliver");
+  await sendText(to, "👑 *Boss quick guide*\n• Send *admin* anytime = this button menu\n• *pending* = orders needing approval\n• Tap ✅ Approve on payment cards\n• Typing still works: /quote /paid /balance /remind /resume /deliver /cancel");
   await sendButtons(to, "Back 👇", [{ id: "adminmenu", title: "1. 👑 Boss Menu" }]);
 }
 
@@ -580,4 +613,48 @@ export async function deliverTicket(adminFrom, target) {
     { id: "menu", title: "3. Main Menu" },
   ]);
   await sendText(from, `✅ ${ticket.ref} marked DELIVERED. Customer notified.`);
+}
+
+// ---- Cancel order: stop mistakes + fraud from the boss side ----
+/** Confirm screen before a cancellation notice goes out. Admin-only (guarded by caller). */
+export async function showCancelConfirm(to, ref, session = null) {
+  const t = getTicketByRef(String(ref || "").toUpperCase());
+  if (!t) {
+    await sendText(to, `❌ No ticket ${ref}.`);
+    return;
+  }
+  if (!OPEN.includes(t.status)) {
+    await sendText(to, `❌ ${t.ref} can't be cancelled (status: ${t.status}). Only open orders can be cancelled.`);
+    return;
+  }
+  if (session) session.menu = [`acancelgo_${t.ref}`, "adminmenu"];
+  await sendButtons(to, `Cancel *${t.ref}* (${t.product || ""})?\n${t.name || "?"} (${t.customer}) will be notified 🚫`, [
+    { id: `acancelgo_${t.ref}`, title: "1. ✅ Yes, cancel" },
+    { id: "adminmenu", title: "2. Boss Menu" },
+  ]);
+}
+
+/** Cancel + notify. Shared by /cancel and the button flow. */
+export async function cancelTicket(adminFrom, target) {
+  const from = adminFrom;
+  const ticket = getTicketByRef(String(target || "").toUpperCase());
+  if (!ticket) {
+    await sendText(from, `❌ No ticket ${target}.`);
+    return;
+  }
+  if (!OPEN.includes(ticket.status)) {
+    await sendText(from, `❌ ${ticket.ref} can't be cancelled (status: ${ticket.status}). Only open orders can be cancelled.`);
+    return;
+  }
+  updateTicket(ticket.ref, { status: "cancelled", dueNow: 0 });
+  await sendText(ticket.customer, `🚫 *Order ${ticket.ref} was cancelled.*\n\n${ticket.product || ""} — if you've already paid, reply here and we'll sort out your refund immediately 🙏\n\n${TAGLINE}`);
+  await custNext(ticket.customer, MENU_HUMAN);
+  await sendText(from, `✅ ${ticket.ref} CANCELLED. Customer notified.`);
+}
+
+/** Boss referral overview. Admin-only (guarded by caller). */
+export async function showRefStats(to, session = null) {
+  if (session) session.menu = ["adminmenu"];
+  await sendText(to, referralStats());
+  await sendButtons(to, "Back 👇", [{ id: "adminmenu", title: "1. 👑 Boss Menu" }]);
 }
